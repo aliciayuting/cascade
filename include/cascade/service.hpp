@@ -1491,6 +1491,31 @@ namespace cascade {
         template <typename SubgroupType>
         inline static uint32_t get_subgroup_type_index();
 
+        /**
+         * Helper for scheduler accessing derechoSST
+         * Get the updated gpu_models of all nodes in the group from derechoSST
+         * @param  _group_gpu_models     CascadeContext cached group's gpu_models information to update
+        */
+        void get_updated_group_gpu_models(std::unordered_map<node_id_t, std::vector<uint32_t>> _group_gpu_models);
+
+        /**
+         * Get the updated load_info of all nodes in the group from derechoSST
+         * @param  _group_queue_wait_times     CascadeContext cached group's queue_wait_time information to update
+        */
+        void get_updated_group_queue_wait_times(std::unordered_map<node_id_t, uint32_t> _group_queue_wait_times);
+
+        /**
+         * Send the local updated gpu_models to all nodes in the group, via derechoSST
+         * @param  _group_queue_wait_times     local gpu_models information from CascadeContext 
+        */
+        void send_local_gpu_models(const std::vector<uint32_t>& _local_group_models);
+
+        /**
+         * Send the local updated queue_wait_time to all nodes in the group, via derechoSST
+         * @param  _local_queue_wait_time     local queue_wait_time information from CascadeContext 
+        */
+        void send_local_queue_wait_time(uint32_t _local_queue_wait_time);
+
         /* singleton */
     private:
         static std::unique_ptr<ServiceClient> service_client_singleton_ptr;
@@ -1609,6 +1634,15 @@ namespace cascade {
         std::thread              single_threaded_workhorse_for_multicast;
         std::thread              single_threaded_workhorse_for_p2p;
 #endif//HAS_STATEFUL_UDL_SUPPORT
+        
+        /** Scheduler used information. */
+        std::unordered_map<node_id_t, std::vector<uint32_t>>  group_gpu_models;
+        std::unordered_map<node_id_t, uint32_t>               group_queue_wait_times;
+        std::mutex      group_gpu_models_mutex;
+        std::mutex      group_queue_wait_times_mutex;
+        std::atomic<uint64_t>   last_group_gpu_models_update_timeus;
+        std::atomic<uint64_t>   last_group_queue_wait_times_update_timeus;
+
         /**
          * destroy the context, to be called in destructor
          */
@@ -1748,6 +1782,21 @@ namespace cascade {
          */
         virtual size_t stateless_action_queue_length_p2p();
         virtual size_t stateless_action_queue_length_multicast();
+
+        /**
+         * Helper function for scheduler:
+         * check machine load on the node, based on local cache info
+         * @param  node_id  the node id to query about its queueing delay
+         * @return wait_time the estimated queueing wait time on that node
+        */
+        uint32_t check_queue_wait_time(node_id_t node_id);
+        /**
+         * check if certain model exist in the node's gpu, based on local cache info
+         * @param  node_id  the node id to query about its models in gpu 
+         * @param  model_id the model_id to check if it is in the node's gpu
+         * @return bool     
+        */
+        bool check_if_model_in_gpu(node_id_t node_id, uint32_t model_id);
 
         /**
          * Destructor
