@@ -1496,7 +1496,7 @@ namespace cascade {
          * Get the updated gpu_models of all nodes in the group from derechoSST
          * @param  _group_gpu_models     CascadeContext cached group's gpu_models information to update
         */
-        void get_updated_group_gpu_models(std::unordered_map<node_id_t, std::vector<uint32_t>> _group_gpu_models);
+        void get_updated_group_gpu_models(std::unordered_map<node_id_t, std::set<uint32_t>> _group_gpu_models);
 
         /**
          * Get the updated load_info of all nodes in the group from derechoSST
@@ -1508,7 +1508,7 @@ namespace cascade {
          * Send the local updated gpu_models to all nodes in the group, via derechoSST
          * @param  _group_queue_wait_times     local gpu_models information from CascadeContext 
         */
-        void send_local_gpu_models(const std::vector<uint32_t>& _local_group_models);
+        void send_local_gpu_models(const std::set<uint32_t>& _local_group_models);
 
         /**
          * Send the local updated queue_wait_time to all nodes in the group, via derechoSST
@@ -1636,10 +1636,10 @@ namespace cascade {
 #endif//HAS_STATEFUL_UDL_SUPPORT
         
         /** Scheduler used information. */
-        std::unordered_map<node_id_t, std::vector<uint32_t>>  group_gpu_models;
-        std::unordered_map<node_id_t, uint32_t>               group_queue_wait_times;
-        std::mutex      group_gpu_models_mutex;
-        std::mutex      group_queue_wait_times_mutex;
+        std::unordered_map<node_id_t, std::set<uint32_t>>  group_gpu_models;
+        std::unordered_map<node_id_t, uint32_t>            group_queue_wait_times;
+        mutable std::shared_mutex      group_gpu_models_mutex;
+        mutable std::shared_mutex      group_queue_wait_times_mutex;
         std::atomic<uint64_t>   last_group_gpu_models_update_timeus;
         std::atomic<uint64_t>   last_group_queue_wait_times_update_timeus;
 
@@ -1797,6 +1797,10 @@ namespace cascade {
          * @return bool     
         */
         bool check_if_model_in_gpu(node_id_t node_id, uint32_t model_id);
+        
+        /** Helper function to check local cached group_gpu_models and group_queue_wait_times
+        */
+        void local_cached_info_dump(std::ostream& out);
 
         /**
          * Destructor

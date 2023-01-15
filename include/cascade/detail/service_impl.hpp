@@ -2069,55 +2069,45 @@ uint32_t ServiceClient<CascadeTypes...>::get_subgroup_type_index() {
 }
 
 template <typename... CascadeTypes>
-void ServiceClient<CascadeTypes...>::get_updated_group_gpu_models(std::unordered_map<node_id_t, std::vector<uint32_t>> _group_gpu_models) {
-    std::vector<node_id_t> nodes = group_ptr->template get_members<SubgroupType>();
+void ServiceClient<CascadeTypes...>::get_updated_group_gpu_models(std::unordered_map<node_id_t, std::set<uint32_t>> _group_gpu_models) {
+    std::vector<node_id_t> nodes = group_ptr->get_members();
     for(node_id_t node_id : nodes){
-        uint64_t encoded_models = group_ptr->template get_cache_models_info<SubgroupType>(node_id);
-        std::vector<uint32_t> decoded_models;
+        uint64_t encoded_models = group_ptr->get_cache_models_info(node_id);
+        std::set<uint32_t> decoded_models;
         for(int k = 0; k < 64; ++k){
             if((encoded_models >> k) & 1){
-                decoded_models.insert(k);
+                decoded_models.emplace(k);
             }
         }
-        if(auto search = _group_gpu_models.find(node_id); search != _group_gpu_models.end()){
-            _group_gpu_models[node_id] = decoded_models;
-        }else{
-            _group_gpu_models.insert(node_id, decoded_models);
-        }
+        _group_gpu_models.emplace(node_id, decoded_models);
     }
 }
 
 template <typename... CascadeTypes>
 void ServiceClient<CascadeTypes...>::get_updated_group_queue_wait_times(std::unordered_map<node_id_t, uint32_t> _group_queue_wait_times) {
-    std::vector<node_id_t> nodes = group_ptr->template get_members<SubgroupType>();
+    std::vector<node_id_t> nodes = group_ptr->get_members();
     for(node_id_t node_id : nodes){
-        uint32_t load_info = group_ptr->template get_load_info<SubgroupType>(node_id);
-        if(auto search = _group_queue_wait_times.find(node_id); search != _group_queue_wait_times.end()){
-            _group_queue_wait_times[node_id] = load_info;
-        }else{
-            _group_queue_wait_times.insert(node_id, load_info);
-        }
+        uint32_t load_info = group_ptr->get_load_info(node_id);
+        _group_queue_wait_times.emplace(node_id, load_info);\
     }
 }
 
 template <typename... CascadeTypes>
-void ServiceClient<CascadeTypes...>::send_local_gpu_models(const std::vector<uint32_t>& _local_group_models) {
+void ServiceClient<CascadeTypes...>::send_local_gpu_models(const std::set<uint32_t>& _local_group_models) {
     uint64_t encoded_models = 0;
     for(int k = 0; k < 64; ++k){
         if(_local_group_models.find(k) != _local_group_models.end()){
             encoded_models |= 1 << k;
         }
     }
-    /** TODO: double check if needed */
-    // std::lock_guard<std::mutex> lock_guard(this->group_ptr_mutex); 
-    group_ptr->template set_my_cache_models_info<SubgroupType>(encoded_models);
+    /** lock is not needed here, since this only set the DerechoSST corresponding entry, 
+     * which will be put to all other nodes periodically through DerechoSST send_load_info_pred */
+    group_ptr->set_my_cache_models_info(encoded_models);
 }
 
 template <typename... CascadeTypes>
 void ServiceClient<CascadeTypes...>::send_local_queue_wait_time(uint32_t _local_queue_wait_time) {
-    /** TODO: double check if needed */
-    // std::lock_guard<std::mutex> lock_guard(this->group_ptr_mutex); 
-    group_ptr->template set_my_load_info<SubgroupType>(_local_queue_wait_time);
+    group_ptr->set_my_load_info(_local_queue_wait_time);
 }
 
 template <typename... CascadeTypes>
@@ -2594,10 +2584,12 @@ uint32_t CascadeContext<CascadeTypes...>::check_queue_wait_time(node_id_t node_i
     /** TODO: move this threshold to config, currently set it to every 1sec*/ 
     if(cur_us - last_group_queue_wait_times_update_timeus > 1000000) {
         last_group_queue_wait_times_update_timeus = cur_us;
-        std::unique_lock<std::mutex> lck(this->group_queue_wait_times_mutex);
+        std::unique_lock<std::mutex> wlck(this->group_queue_wait_times_mutex);
         this->get_service_client_ref().get_updated_group_queue_wait_times(this->group_queue_wait_times);
     }
-    return this->group_queue_wait_times[node_id];
+    std::shared_lock rlck(this->group_queue_wait_times_mutex);
+    auto wait_time = this->group_queue_wait_times[node_id];
+    return wait_time;
 }
 
 template <typename... CascadeTypes>
@@ -2608,11 +2600,32 @@ bool CascadeContext<CascadeTypes...>::check_if_model_in_gpu(node_id_t node_id, u
     /** TODO: move this threshold to config, currently set it to every 10sec*/ 
     if(cur_us - last_group_gpu_models_update_timeus > 10000000) {
         last_group_gpu_models_update_timeus = cur_us;
-        std::unique_lock<std::mutex> lck(this->group_gpu_models_mutex);
+        std::unique_lock<std::mutex> wlck(this->group_gpu_models_mutex);
         this->get_service_client_ref().get_updated_group_gpu_models(this->group_gpu_models);
     }
-    return this->group_gpu_models[node_id].find(model_id) != this->group_gpu_models[node_id].end();
+    std::shared_lock rlck(this->group_gpu_models_mutex);
+    bool exist_model_in_gpu = this->group_gpu_models[node_id].find(model_id) != this->group_gpu_models[node_id].end();
+    return exist_model_in_gpu;
 }
+
+template <typename... CascadeTypes>
+void CascadeContext<CascadeTypes...>::local_cached_info_dump(std::ostream& out) {
+    out << "CascadeContext:\n"
+        << "\tCached group info:\n"
+        << "\tnode_id,  queue_wait_time, cached_models \n";
+    std::shared_lock rlck_wait_time(this->group_queue_wait_times_mutex);
+    std::shared_lock rlck_models_gpu(this->group_gpu_models_mutex);
+    for (auto& [node_id, wait_time]: this->group_queue_wait_times) {
+        out << node_id << ", " << wait_time << ", ";
+        out << "[";
+        //std::set<uint32_t>::iterator itr;
+        for (auto models: this->group_gpu_models[node_id]){
+            out << models << ", ";
+        }
+        out << "]\n";
+    }
+}
+
 
 template <typename... CascadeTypes>
 CascadeContext<CascadeTypes...>::~CascadeContext() {
