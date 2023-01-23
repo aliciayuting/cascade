@@ -1,5 +1,6 @@
 #pragma once
 
+#include <set>
 #include <string>
 #include <sstream>
 #include <unordered_map>
@@ -87,11 +88,14 @@ namespace cascade {
 #define DFG_JSON_DESCRIPTION            "desc"
 #define DFG_JSON_GRAPH                  "graph"
 #define DFG_JSON_PATHNAME               "pathname"
+#define DFG_JSON_TASK_ID                "dfg_task_id"
 #define DFG_JSON_SHARD_DISPATCHER_LIST  "shard_dispatcher_list"
 #define DFG_JSON_UDL_LIST               "user_defined_logic_list"
 #define DFG_JSON_UDL_STATEFUL_LIST      "user_defined_logic_stateful_list"
 #define DFG_JSON_UDL_HOOK_LIST          "user_defined_logic_hook_list"
 #define DFG_JSON_UDL_CONFIG_LIST        "user_defined_logic_config_list"
+#define DFG_JSON_REQUIRED_MODELS_LIST   "required_models_list"
+#define DFG_JSON_EXEC_TIME_LIST         "expected_gpu_execution_timeus_list"  
 #define DFG_JSON_DESTINATIONS           "destinations"
 #define DFG_JSON_PUT                    "put"
 #define DFG_JSON_TRIGGER_PUT            "trigger_put"
@@ -125,9 +129,14 @@ public:
     // to its vertex structure.
     struct DataFlowGraphVertex {
         std::string pathname;
+        uint32_t task_id;
         // The optional shard dispatcher configuration
         // uuid->shard_dispatcher
         std::unordered_map<std::string,VertexShardDispatcher> shard_dispatchers;
+        // uuid->model_id_list
+        std::unordered_map<std::string,std::set<uint32_t>> required_models;
+        // uuid->expected_gpu_execution_timeus
+        std::unordered_map<std::string,uint64_t> expected_execution_timeus;
         // uuid->stateful
         std::unordered_map<std::string,Statefulness> stateful;
         // uuid->hook

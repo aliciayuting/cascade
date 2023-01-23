@@ -598,6 +598,7 @@ ObjectWithStringKey::ObjectWithStringKey(const std::string& _key,
     previous_version(INVALID_VERSION),
     previous_version_by_key(INVALID_VERSION),
     key(_key),
+    adfg(),
     blob(_blob) {}
 // constructor 0.5 : copy/in-place constructor
 ObjectWithStringKey::ObjectWithStringKey(
@@ -619,6 +620,30 @@ ObjectWithStringKey::ObjectWithStringKey(
     previous_version(_previous_version),
     previous_version_by_key(_previous_version_by_key),
     key(_key), 
+    adfg(),
+    blob(_blob.bytes,_blob.size,emplaced) {}
+
+ObjectWithStringKey::ObjectWithStringKey(
+#ifdef ENABLE_EVALUATION
+                                         const uint64_t _message_id,
+#endif
+                                         const persistent::version_t _version,
+                                         const uint64_t _timestamp_us,
+                                         const persistent::version_t _previous_version,
+                                         const persistent::version_t _previous_version_by_key,
+                                         const std::string& _key,
+                                         const std::string& _adfg,
+                                         const Blob& _blob,
+                                         const bool emplaced) :
+#ifdef ENABLE_EVALUATION
+    message_id(_message_id),
+#endif
+    version(_version),
+    timestamp_us(_timestamp_us),
+    previous_version(_previous_version),
+    previous_version_by_key(_previous_version_by_key),
+    key(_key), 
+    adfg(_adfg),
     blob(_blob.bytes,_blob.size,emplaced) {}
 
 // constructor 1 : copy consotructor
@@ -633,6 +658,7 @@ ObjectWithStringKey::ObjectWithStringKey(const std::string& _key,
     previous_version(INVALID_VERSION),
     previous_version_by_key(INVALID_VERSION),
     key(_key),
+    adfg(),
     blob(_b, _s) {}
 // constructor 1.5 : copy constructor
 ObjectWithStringKey::ObjectWithStringKey(
@@ -654,9 +680,49 @@ ObjectWithStringKey::ObjectWithStringKey(
     previous_version(_previous_version),
     previous_version_by_key(_previous_version_by_key),
     key(_key), 
+    adfg(),
     blob(_b, _s) {}
 
-// constructor 2 : move constructor
+// constructor 2 : copy consotructor
+ObjectWithStringKey::ObjectWithStringKey(const std::string& _key,
+                                         const std::string& _adfg,
+                                         const uint8_t* const _b, 
+                                         const std::size_t _s) :
+#ifdef ENABLE_EVALUATION
+    message_id(0),
+#endif
+    version(persistent::INVALID_VERSION),
+    timestamp_us(0),
+    previous_version(INVALID_VERSION),
+    previous_version_by_key(INVALID_VERSION),
+    key(_key),
+    adfg(_adfg),
+    blob(_b, _s) {}
+// constructor 1.5 : copy constructor
+ObjectWithStringKey::ObjectWithStringKey(
+#ifdef ENABLE_EVALUATION
+                                         const uint64_t _message_id,
+#endif
+                                         const persistent::version_t _version,
+                                         const uint64_t _timestamp_us,
+                                         const persistent::version_t _previous_version,
+                                         const persistent::version_t _previous_version_by_key,
+                                         const std::string& _key,
+                                         const std::string& _adfg,
+                                         const uint8_t* const _b,
+                                         const std::size_t _s) :
+#ifdef ENABLE_EVALUATION
+    message_id(_message_id),
+#endif
+    version(_version),
+    timestamp_us(_timestamp_us),
+    previous_version(_previous_version),
+    previous_version_by_key(_previous_version_by_key),
+    key(_key), 
+    adfg(_adfg),
+    blob(_b, _s) {}
+
+// constructor 3 : move constructor
 ObjectWithStringKey::ObjectWithStringKey(ObjectWithStringKey&& other) :
 #ifdef ENABLE_EVALUATION
     message_id(other.message_id),
@@ -666,9 +732,10 @@ ObjectWithStringKey::ObjectWithStringKey(ObjectWithStringKey&& other) :
     previous_version(other.previous_version),
     previous_version_by_key(other.previous_version_by_key),
     key(other.key),
+    adfg(other.adfg),
     blob(std::move(other.blob)) {}
 
-// constructor 3 : copy constructor
+// constructor 4 : copy constructor
 ObjectWithStringKey::ObjectWithStringKey(const ObjectWithStringKey& other) :
 #ifdef ENABLE_EVALUATION
     message_id(other.message_id),
@@ -678,9 +745,10 @@ ObjectWithStringKey::ObjectWithStringKey(const ObjectWithStringKey& other) :
     previous_version(other.previous_version),
     previous_version_by_key(other.previous_version_by_key),
     key(other.key),
+    adfg(other.adfg),
     blob(other.blob) {}
 
-// constructor 4 : default invalid constructor
+// constructor 5 : default invalid constructor
 ObjectWithStringKey::ObjectWithStringKey() : 
 #ifdef ENABLE_EVALUATION
     message_id(0),
@@ -689,9 +757,10 @@ ObjectWithStringKey::ObjectWithStringKey() :
     timestamp_us(0),
     previous_version(INVALID_VERSION),
     previous_version_by_key(INVALID_VERSION),
-    key() {}
+    key(),
+    adfg() {}
 
-// constructor 5 : using delayed instatiator with message generator
+// constructor 6 : using delayed instatiator with message generator
 ObjectWithStringKey::ObjectWithStringKey(const std::string& _key,
                                          const blob_generator_func_t& _message_generator,
                                          const std::size_t _size):
@@ -703,9 +772,10 @@ ObjectWithStringKey::ObjectWithStringKey(const std::string& _key,
     previous_version(INVALID_VERSION),
     previous_version_by_key(INVALID_VERSION),
     key(_key),
+    adfg(),
     blob(_message_generator,_size) {}
 
-// constructor 5.5 : using delayed instatiator with message generator
+// constructor 6.5 : using delayed instatiator with message generator
 ObjectWithStringKey::ObjectWithStringKey(
 #ifdef ENABLE_EVALUATION
                                          const uint64_t _message_id,
@@ -744,6 +814,7 @@ void ObjectWithStringKey::copy_from(const ObjectWithStringKey& rhs) {
     this->previous_version = rhs.previous_version;
     this->previous_version_by_key = rhs.previous_version_by_key;
     this->key = rhs.key;
+    this->adfg = rhs.adfg;
     // copy assignment
     this->blob = rhs.blob;
 }
@@ -779,6 +850,10 @@ bool ObjectWithStringKey::verify_previous_version(persistent::version_t prev_ver
            ((this->previous_version_by_key == persistent::INVALID_VERSION)?true:(this->previous_version_by_key >= prev_ver_by_key));
 }
 
+const std::string& ObjectWithStringKey::get_adft() const {
+    return this->adfg;
+}
+
 #ifdef ENABLE_EVALUATION
 void ObjectWithStringKey::set_message_id(uint64_t id) const {
     this->message_id = id;
@@ -804,6 +879,7 @@ std::size_t ObjectWithStringKey::to_bytes(uint8_t* v) const {
     pos+=mutils::to_bytes(previous_version, v + pos);
     pos+=mutils::to_bytes(previous_version_by_key, v + pos);
     pos+=mutils::to_bytes(key, v + pos);
+    pos+=mutils::to_bytes(adfg, v + pos);
     pos+=mutils::to_bytes(blob, v + pos);
     return pos;
 }
@@ -818,6 +894,7 @@ std::size_t ObjectWithStringKey::bytes_size() const {
            mutils::bytes_size(previous_version) +
            mutils::bytes_size(previous_version_by_key) +
            mutils::bytes_size(key) +
+           mutils::bytes_size(adfg) + 
            mutils::bytes_size(blob);
 }
 
@@ -830,6 +907,7 @@ void ObjectWithStringKey::post_object(const std::function<void(uint8_t const* co
     mutils::post_object(f, previous_version);
     mutils::post_object(f, previous_version_by_key);
     mutils::post_object(f, key);
+    mutils::post_object(f, adfg);
     mutils::post_object(f, blob);
 }
 
@@ -849,6 +927,8 @@ std::unique_ptr<ObjectWithStringKey> ObjectWithStringKey::from_bytes(mutils::Des
     pos += mutils::bytes_size(*p_previous_version);
     auto p_key = mutils::from_bytes_noalloc<std::string>(dsm,v + pos);
     pos += mutils::bytes_size(*p_key);
+    auto p_adfg = mutils::from_bytes_noalloc<std::string>(dsm,v + pos);
+    pos += mutils::bytes_size(*p_adfg);
     auto p_blob = mutils::from_bytes_noalloc<Blob>(dsm, v + pos);
     // this is a copy constructor
     return std::make_unique<ObjectWithStringKey>(
@@ -860,6 +940,7 @@ std::unique_ptr<ObjectWithStringKey> ObjectWithStringKey::from_bytes(mutils::Des
         *p_previous_version,
         *p_previous_version_by_key,
         *p_key,
+        *p_adfg,
         *p_blob);
 }
 
@@ -881,6 +962,8 @@ mutils::context_ptr<ObjectWithStringKey> ObjectWithStringKey::from_bytes_noalloc
     pos += mutils::bytes_size(*p_previous_version);
     auto p_key = mutils::from_bytes_noalloc<std::string>(dsm,v + pos);
     pos += mutils::bytes_size(*p_key);
+    auto p_adfg = mutils::from_bytes_noalloc<std::string>(dsm,v + pos);
+    pos += mutils::bytes_size(*p_adfg);
     auto p_blob = mutils::from_bytes_noalloc<Blob>(dsm, v + pos);
     return mutils::context_ptr<ObjectWithStringKey>(
         new ObjectWithStringKey{
@@ -892,6 +975,7 @@ mutils::context_ptr<ObjectWithStringKey> ObjectWithStringKey::from_bytes_noalloc
         *p_previous_version,
         *p_previous_version_by_key,
         *p_key,
+        *p_adfg,
         *p_blob,true});
 }
 
@@ -913,6 +997,8 @@ mutils::context_ptr<const ObjectWithStringKey> ObjectWithStringKey::from_bytes_n
     pos += mutils::bytes_size(*p_previous_version);
     auto p_key = mutils::from_bytes_noalloc<std::string>(dsm,v + pos);
     pos += mutils::bytes_size(*p_key);
+    auto p_adfg = mutils::from_bytes_noalloc<std::string>(dsm,v + pos);
+    pos += mutils::bytes_size(*p_adfg);
     auto p_blob = mutils::from_bytes_noalloc<Blob>(dsm, v + pos);
     return mutils::context_ptr<const ObjectWithStringKey>(
         new ObjectWithStringKey{
@@ -924,6 +1010,7 @@ mutils::context_ptr<const ObjectWithStringKey> ObjectWithStringKey::from_bytes_n
         *p_previous_version,
         *p_previous_version_by_key,
         *p_key,
+        *p_adfg,
         *p_blob,true});
 }
 

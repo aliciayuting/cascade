@@ -1502,7 +1502,7 @@ namespace cascade {
          * Get the updated load_info of all nodes in the group from derechoSST
          * @param  _group_queue_wait_times     CascadeContext cached group's queue_wait_time information to update
         */
-        void get_updated_group_queue_wait_times(std::unordered_map<node_id_t, uint32_t> _group_queue_wait_times);
+        void get_updated_group_queue_wait_times(std::unordered_map<node_id_t, uint64_t> _group_queue_wait_times);
 
         /**
          * Send the local updated gpu_models to all nodes in the group, via derechoSST
@@ -1514,7 +1514,7 @@ namespace cascade {
          * Send the local updated queue_wait_time to all nodes in the group, via derechoSST
          * @param  _local_queue_wait_time     local queue_wait_time information from CascadeContext 
         */
-        void send_local_queue_wait_time(uint32_t _local_queue_wait_time);
+        void send_local_queue_wait_time(uint64_t _local_queue_wait_time);
 
         /* singleton */
     private:
@@ -1636,8 +1636,12 @@ namespace cascade {
 #endif//HAS_STATEFUL_UDL_SUPPORT
         
         /** Scheduler used information. */
-        std::unordered_map<node_id_t, std::set<uint32_t>>  group_gpu_models;
-        std::unordered_map<node_id_t, uint32_t>            group_queue_wait_times;
+        std::atomic<uint64_t>  local_queue_wait_time;
+        std::set<uint32_t>  local_gpu_models;
+        mutable std::shared_mutex local_gpu_models_mutex;
+
+        std::unordered_map<node_id_t, std::set<uint32_t>>  group_gpu_models; // include all other nodes info, beside this node
+        std::unordered_map<node_id_t, uint64_t>            group_queue_wait_times;// include all other nodes info, beside this node
         mutable std::shared_mutex      group_gpu_models_mutex;
         mutable std::shared_mutex      group_queue_wait_times_mutex;
         std::atomic<uint64_t>   last_group_gpu_models_update_timeus;
@@ -1789,7 +1793,7 @@ namespace cascade {
          * @param  node_id  the node id to query about its queueing delay
          * @return wait_time the estimated queueing wait time on that node
         */
-        uint32_t check_queue_wait_time(node_id_t node_id);
+        uint64_t check_queue_wait_time(node_id_t node_id);
         /**
          * check if certain model exist in the node's gpu, based on local cache info
          * @param  node_id  the node id to query about its models in gpu 
@@ -1800,7 +1804,7 @@ namespace cascade {
         
         /** Helper function to check local cached group_gpu_models and group_queue_wait_times
         */
-        void local_cached_info_dump(std::ostream& out);
+        std::string local_cached_info_dump();
 
         /**
          * Destructor

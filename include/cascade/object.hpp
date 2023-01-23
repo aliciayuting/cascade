@@ -251,7 +251,10 @@ public:
     mutable persistent::version_t                       previous_version;       // previous version, INVALID_VERSION for the first version.
     mutable persistent::version_t                       previous_version_by_key; // previous version by key, INVALID_VERSION for the first value of the key.
     std::string                                         key;                     // object_id
+    /** TODO: better data structure for adfg, use fixed size array instead*/
+    std::string                                         adfg;                    // activation DFG, for event-driven scheduler
     Blob                                                blob;                    // the object data
+    
 
     // bool operator==(const ObjectWithStringKey& other);
 
@@ -269,6 +272,19 @@ public:
                         const persistent::version_t _previous_version,
                         const persistent::version_t _previous_version_by_key,
                         const std::string& _key,
+                        const Blob& _blob,
+                        bool  is_emplaced = false);
+    
+    ObjectWithStringKey(
+#ifdef ENABLE_EVALUATION
+                        const uint64_t message_id,
+#endif
+                        const persistent::version_t _version,
+                        const uint64_t _timestamp_us,
+                        const persistent::version_t _previous_version,
+                        const persistent::version_t _previous_version_by_key,
+                        const std::string& _key,
+                        const std::string& _adfg,
                         const Blob& _blob,
                         bool  is_emplaced = false);
 
@@ -290,22 +306,42 @@ public:
                         const uint8_t* const _b,
                         const std::size_t _s);
 
+    // constructor 2 : copy consotructor
+    ObjectWithStringKey(const std::string& _key,
+                        const std::string& _adfg,
+                        const uint8_t* const _b,
+                        const std::size_t _s);
+
+    // constructor 2.5 : copy constructor
+    ObjectWithStringKey(
+#ifdef ENABLE_EVALUATION
+                        const uint64_t message_id,
+#endif
+                        const persistent::version_t _version,
+                        const uint64_t _timestamp_us,
+                        const persistent::version_t _previous_version,
+                        const persistent::version_t _previous_version_by_key,
+                        const std::string& _key,
+                        const std::string& _adfg,
+                        const uint8_t* const _b,
+                        const std::size_t _s);
+
     // TODO: we need a move version for the deserializer.
 
-    // constructor 2 : move constructor
+    // constructor 3 : move constructor
     ObjectWithStringKey(ObjectWithStringKey&& other);
 
-    // constructor 3 : copy constructor
+    // constructor 4 : copy constructor
     ObjectWithStringKey(const ObjectWithStringKey& other);
 
-    // constructor 4 : default invalid constructor
+    // constructor 5 : default invalid constructor
     ObjectWithStringKey();
 
-    // constructor 5 : using delayed instantiator with message generator
+    // constructor 6 : using delayed instantiator with message generator
     ObjectWithStringKey(const std::string& _key,
                         const blob_generator_func_t& _message_generator,
                         const std::size_t _size);
-    // constructor 5.5 : using delayed instatiator withe message generator
+    // constructor 6.5 : using delayed instatiator withe message generator
     ObjectWithStringKey(
 #ifdef ENABLE_EVALUATION
                         const uint64_t message_id,
@@ -328,6 +364,8 @@ public:
     virtual uint64_t get_timestamp() const override;
     virtual void set_previous_version(persistent::version_t prev_ver, persistent::version_t perv_ver_by_key) const override;
     virtual bool verify_previous_version(persistent::version_t prev_ver, persistent::version_t perv_ver_by_key) const override;
+    // below function is for event-driven scheduler
+    const std::string& get_adft() const;
 #ifdef ENABLE_EVALUATION
     virtual void set_message_id(uint64_t id) const override;
     virtual uint64_t get_message_id() const override;
@@ -346,6 +384,7 @@ public:
         mutils::DeserializationManager* ctx,
         const uint8_t* const v);
 
+
     // IK and IV for volatile cascade store
     static std::string IK;
     static ObjectWithStringKey IV;
@@ -360,7 +399,8 @@ inline std::ostream& operator<<(std::ostream& out, const ObjectWithStringKey& o)
         << ", ts: " << o.timestamp_us
         << ", prev_ver: " << std::hex << o.previous_version << std::dec
         << ", prev_ver_by_key: " << std::hex << o.previous_version_by_key << std::dec
-        << ", id:" << o.key 
+        << ", id:" << o.key  
+        << ", adfg:" << o.adfg
         << ", data:" << o.blob << "}";
     return out;
 }
