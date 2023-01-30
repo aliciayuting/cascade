@@ -1591,6 +1591,19 @@ namespace cascade {
                     >
                 >;
     using match_results_t = std::unordered_map<std::string,prefix_entry_t>;
+    using pre_adfg_t = 
+                std::unordered_map<
+                    std::string, //pathname
+                    std::tuple<
+                        std::set<std::string>,                         // required_objects_pathnames
+                        std::vector<uint32_t>,                            // required_models
+                        std::vector<uint32_t>,                             // required_models_size
+                        std::vector<std::string>,                       // sorted_pathnames
+                        uint32_t,                                       // expected output size in KB
+                        uint64_t                                        // estimated excution time in us
+                    >
+                >;
+
     template <typename... CascadeTypes>
     class CascadeContext: public ICascadeContext {
     private:
@@ -1623,6 +1636,12 @@ namespace cascade {
          * prefix->{udl_id->{ocdpo,{prefix->trigger_put/put}}
          */
         std::shared_ptr<PrefixRegistry<prefix_entry_t,PATH_SEPARATOR>> prefix_registry_ptr;
+        /** mapping between {entry_pathname of the dfg -> pre_adfg_t}
+         * where pre_adfg_t is mapping of
+         *   {vertex_pathname -> tuple(dependent_objects_pathnames, required_models, ranked_verticies_pathnames)}
+        */
+        std::unordered_map<std::string, pre_adfg_t> pre_adfg_dependencies;
+        mutable std::shared_mutex      pre_adfg_dependencies_mutex;
         /** the data path logic loader */
         std::unique_ptr<UserDefinedLogicManager<CascadeTypes...>> user_defined_logic_manager;
         /** the off-critical data path worker thread pools */
@@ -1763,6 +1782,11 @@ namespace cascade {
          * @return the unordered map of observers registered to this prefix.
          */
         virtual match_results_t get_prefix_handlers(const std::string& prefix);
+        /**
+         * Helper function for adfg construction
+         * @param entry_pathname        - the path name of the entry vertex of the dfg
+        */
+        virtual pre_adfg_t get_pre_adfg(const std::string& entry_pathname);
         /**
          * post an action to the Context for processing.
          *

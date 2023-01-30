@@ -2128,7 +2128,11 @@ void CascadeContext<CascadeTypes...>::construct() {
     user_defined_logic_manager = UserDefinedLogicManager<CascadeTypes...>::create(this);
     auto dfgs = DataFlowGraph::get_data_flow_graphs();
     for(auto& dfg : dfgs) {
+        pre_adfg_t pre_adfg;
+        std::string entry_pathname;
         for(auto& vertex : dfg.vertices) {
+            uint32_t result_size = 0;
+            uint64_t expected_runtime = 0;
             for(auto& edge : vertex.second.edges) {
                 register_prefixes(
                         {vertex.second.pathname},
@@ -2142,8 +2146,19 @@ void CascadeContext<CascadeTypes...>::construct() {
                                 edge.first,  // UUID
                                 vertex.second.configurations.at(edge.first)),
                         edge.second);
+                expected_runtime = expected_runtime + vertex.second.expected_execution_timeus.at(edge.first);
+                result_size = result_size + vertex.second.expected_execution_timeus.at(edge.first);
             }
+            entry_pathname = dfg.sorted_pathnames[0];
+            pre_adfg.emplace(std::piecewise_construct, std::forward_as_tuple(entry_pathname),
+                    std::forward_as_tuple(vertex.second.required_objects_pathnames, 
+                                        vertex.second.required_models,
+                                        vertex.second.required_models_size, 
+                                        dfg.sorted_pathnames, 
+                                        result_size, expected_runtime));
         }
+        std::unique_lock<std::shared_mutex> wlck(this->pre_adfg_dependencies_mutex);
+        pre_adfg_dependencies.emplace(entry_pathname, pre_adfg);
         // Testing purposes
         dfg.dump();
     }
@@ -2485,6 +2500,12 @@ match_results_t CascadeContext<CascadeTypes...>::get_prefix_handlers(const std::
             });
 
     return handlers;
+}
+
+template <typename... CascadeTypes>
+pre_adfg_t CascadeContext<CascadeTypes...>::get_pre_adfg(const std::string& entry_pathname) {
+    std::shared_lock rlck(this->pre_adfg_dependencies_mutex);
+    return this->pre_adfg_dependencies.at(entry_pathname);
 }
 
 template <typename... CascadeTypes>

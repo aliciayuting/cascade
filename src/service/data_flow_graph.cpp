@@ -51,7 +51,32 @@ DataFlowGraph::DataFlowGraph(const json& dfg_conf):
             } else {
                 dfgv.configurations.emplace(udl_uuid,json{});
             }
-            // edges
+            // information for scheduler
+            // required_model_list
+            if (it->contains(DFG_JSON_REQUIRED_MODELS_LIST)){
+                dfgv.required_models.emplace_back((*it)[DFG_JSON_REQUIRED_MODELS_LIST].at(i).get<uint32_t>());
+            } else{
+                dfgv.required_models.emplace_back(0);
+            }
+            // required_model_size_list
+            if (it->contains(DFG_JSON_REQUIRED_MODELS_SIZE_LIST)){
+                dfgv.required_models_size.emplace_back((*it)[DFG_JSON_REQUIRED_MODELS_SIZE_LIST].at(i).get<uint32_t>());
+            } else{
+                dfgv.required_models_size.emplace_back(0);
+            }
+            // expected_output_size in KB
+            if (it->contains(DFG_JSON_UDL_OUTPUT_SIZE_LIST)){
+                dfgv.expected_output_size.emplace(udl_uuid, (*it)[DFG_JSON_UDL_OUTPUT_SIZE_LIST].at(i).get<uint32_t>());
+            } else{
+                dfgv.expected_output_size.emplace(udl_uuid, 0);
+            }
+            // expected_gpu_execution_timeus
+            if (it->contains(DFG_JSON_EXEC_TIME_LIST)){
+                dfgv.expected_execution_timeus.emplace(udl_uuid, (*it)[DFG_JSON_EXEC_TIME_LIST].at(i).get<uint64_t>());
+            } else{
+                dfgv.expected_execution_timeus.emplace(udl_uuid, 0);
+            }
+            // edges: next steps edges
             std::map<std::string,std::string> dest = 
                 (*it)[DFG_JSON_DESTINATIONS].at(i).get<std::map<std::string,std::string>>();
 
@@ -65,10 +90,50 @@ DataFlowGraph::DataFlowGraph(const json& dfg_conf):
                     dfgv.edges[udl_uuid].emplace(kv.first + PATH_SEPARATOR,(kv.second==DFG_JSON_TRIGGER_PUT)?true:false);
                 }
             }
-
+        }
+        // required objects' pathnames
+        for(size_t i=0;i<(*it)[DFG_REQUIRED_OBJECTS_LIST].size();i++) {
+            std::string objects_pathname = (*it)[DFG_REQUIRED_OBJECTS_LIST].at(i);
+            /* fix the pathname if it is not ended by a separator */
+            if(objects_pathname.back() != PATH_SEPARATOR) {
+                objects_pathname = objects_pathname + PATH_SEPARATOR;
+            }
+            dfgv.required_objects_pathnames.emplace(objects_pathname);
         }
         vertices.emplace(dfgv.pathname,dfgv);
     }
+    // Helper function for scheduler: rank the verticies by their dependencies.
+    std::vector<std::string> ranked_verticies;
+    std::vector<std::string> next_verticies_to_process;
+    for(auto vertex:vertices){
+        if(vertex.second.required_objects_pathnames.empty()){
+            next_verticies_to_process.emplace_back(vertex.first);
+        }
+    }
+    while(!next_verticies_to_process.empty()){
+        std::string proc_vertex_pathname = next_verticies_to_process.back();
+        next_verticies_to_process.pop_back();
+        if(std::find(ranked_verticies.begin(), ranked_verticies.end(), proc_vertex_pathname) == ranked_verticies.end()){
+            ranked_verticies.emplace_back(proc_vertex_pathname);
+        }
+        const auto& vertex = vertices.at(proc_vertex_pathname);
+        for(const auto& edge: vertex.edges){
+            auto pathname = edge.first;
+            // check if required verticies are in the ranked_verticies already
+            bool ranked_all_required = true;
+            for(auto& required_pathname: vertices.at(pathname).required_objects_pathnames){
+                ranked_all_required = std::find(ranked_verticies.begin(), ranked_verticies.end(), required_pathname) != ranked_verticies.end();
+                if(!ranked_all_required){
+                    break;
+                }
+            }
+            if(ranked_all_required){
+                next_verticies_to_process.emplace_back(pathname);
+            }
+            
+        }
+    }
+    this->sorted_pathnames = ranked_verticies;
 }
 
 DataFlowGraph::DataFlowGraph(const DataFlowGraph& other):

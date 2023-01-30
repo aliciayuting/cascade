@@ -88,15 +88,17 @@ namespace cascade {
 #define DFG_JSON_DESCRIPTION            "desc"
 #define DFG_JSON_GRAPH                  "graph"
 #define DFG_JSON_PATHNAME               "pathname"
-#define DFG_JSON_TASK_ID                "dfg_task_id"
 #define DFG_JSON_SHARD_DISPATCHER_LIST  "shard_dispatcher_list"
 #define DFG_JSON_UDL_LIST               "user_defined_logic_list"
 #define DFG_JSON_UDL_STATEFUL_LIST      "user_defined_logic_stateful_list"
 #define DFG_JSON_UDL_HOOK_LIST          "user_defined_logic_hook_list"
 #define DFG_JSON_UDL_CONFIG_LIST        "user_defined_logic_config_list"
 #define DFG_JSON_REQUIRED_MODELS_LIST   "required_models_list"
+#define DFG_JSON_REQUIRED_MODELS_SIZE_LIST   "required_models_size_list"
+#define DFG_JSON_UDL_OUTPUT_SIZE_LIST   "output_size_list"  
 #define DFG_JSON_EXEC_TIME_LIST         "expected_gpu_execution_timeus_list"  
 #define DFG_JSON_DESTINATIONS           "destinations"
+#define DFG_REQUIRED_OBJECTS_LIST       "required_objects_pathnames"
 #define DFG_JSON_PUT                    "put"
 #define DFG_JSON_TRIGGER_PUT            "trigger_put"
 #define DFG_JSON_CONF_FILE              "dfgs.json"
@@ -133,10 +135,17 @@ public:
         // The optional shard dispatcher configuration
         // uuid->shard_dispatcher
         std::unordered_map<std::string,VertexShardDispatcher> shard_dispatchers;
-        // uuid->model_id_list
-        std::unordered_map<std::string,std::set<uint32_t>> required_models;
+        // uuid->model_id
+        /** TODO: expand this, since each udl may require multiple models!! */
+        std::vector<uint32_t> required_models;
+        // uuid->model_size
+        std::vector<uint32_t> required_models_size;
+        // uuid->output_size in KB
+        std::unordered_map<std::string, uint32_t> expected_output_size;
         // uuid->expected_gpu_execution_timeus
         std::unordered_map<std::string,uint64_t> expected_execution_timeus;
+        // uuid->expected_result_size
+        std::unordered_map<std::string,uint32_t> result_size;
         // uuid->stateful
         std::unordered_map<std::string,Statefulness> stateful;
         // uuid->hook
@@ -145,8 +154,16 @@ public:
         std::unordered_map<std::string,json> configurations;
         // The edges is a map from UDL uuid string to a vector of destiation vertex pathnames.
         // An entry "udl_uuid->[pool1:true,pool2:false,pool3:false]" means three edges from the current vertex to three destination
-        // vertices pool1, pool2, and pool3. The input data is processed by UDL specified by udl_uuid.
+        // vertices pool1, pool2, and pool3. The input data is processed by UDL specified by udl_uuid. 
+        // include PATH_SEPARATOR at the end
         std::unordered_map<std::string,std::unordered_map<std::string,bool>> edges;
+        // The reverse map of edges, which denotes the required results from previous verticies to execute this vertex. 
+        // include PATH_SEPARATOR at the end
+        std::set<std::string> required_objects_pathnames; 
+        /** TODO: This assume all the udls in this vertex share the same set of required objects. 
+         *        Need more wholistic scheduler design of the vertex graph structure, do we want udls with the same pathname to be executed 
+         *        on the same node? Do we want to have vertex to just represent intersect of multiple udls, which may be involved with multiple dfgs?
+        */
         // to string
         inline std::string to_string() const {
             std::ostringstream out;
@@ -181,11 +198,24 @@ public:
                     out << "\t-[udl:" << e.first << "]-" << (pool.second?'*':'-') << "->" << pool.first <<"\n";
                 }
             }
-            out << "}";
+            out << "required model: ";
+            for (auto& m: required_models) {
+                out << m << ",";
+            }
+            out << "\nrequired objects pathnames: ";
+            for (auto& rop: required_objects_pathnames) {
+                out << rop << ",";
+            }
+            out << "\n}";
             return out.str();
         }
     };
     std::unordered_map<std::string,DataFlowGraphVertex> vertices;
+    // list of sorted verticies, from 0,..., total number of verticies in the dfg
+    // Preserving the priority according to dependencies. If there is an edge from vertex A -> vertex B, then idx(A)<idx(B) 
+    /** TODO:Follow from required_objects_path_names. This assumes all the udl in this vertex share the same rank. 
+     * make this to be map<std::string, std::vector<std::string>> udl_uuid->sorted_udls, */
+    std::vector<std::string> sorted_pathnames; 
     /**
      * Constructors
      */
