@@ -433,6 +433,72 @@ typedef union __attribute__((packed,aligned(8))) action_fire_extra_info {
 #define TLT_ACTION_FIRE_START                       (6003)
 #define TLT_ACTION_FIRE_END                         (6004)
 
+
+#define FIXED_COST_GROUP_FORMATION  (2)
+
+inline uint64_t round_double(double _d){
+     if (_d >= -9223372036854775808.0   // -2^63
+          && _d <   9223372036854775808.0)  // 2^63
+     {
+          return static_cast<uint64_t>(_d);
+     }
+     return UINT64_MAX;
+}
+
+/**
+ * Scheduler helper function
+ * Estimated time(us) to move object from host machine to GPU, using the data collected
+ * @param object_size     the size of the object to move, in KB
+*/
+inline uint64_t host_to_GPU_delay(uint64_t object_size){
+     double throughput = 4.7 * (1 << 20) / 1000.0;
+     double delay = (1000.0 * object_size / throughput) + FIXED_COST_GROUP_FORMATION;
+     return round_double(delay);
+}
+
+/**
+ * Estimated time(us) to send object over RDMA 
+ * @param object_size     the size of the object to move, in KB
+*/
+inline uint64_t CPU_to_CPU_delay(uint64_t object_size){
+     double throughput;
+     double delay;
+     if(object_size < 1){
+          return 2; // 2 us
+     }else if(object_size < (1 << 2)){ // for size between 1 ~ 4 KB
+          throughput = (3 + object_size * 2) * (1 << 20) / 1000.0;
+          delay = (object_size / throughput) + FIXED_COST_GROUP_FORMATION;
+     }else{
+          throughput = 12 * (1 << 20) / 1000.0;
+          delay = (object_size / throughput) + FIXED_COST_GROUP_FORMATION;
+     }
+     return round_double(delay);
+     
+}
+
+/**
+ * Estimated time(us) to move object from GPU to host machine, using the data collected
+ * @param object_size     the size of the object to move, in KB
+*/
+inline uint64_t GPU_to_host_delay(uint64_t object_size){
+     double throughput = 4.7 * (1 << 20) / 1000.0;
+     double delay = (object_size / throughput) + FIXED_COST_GROUP_FORMATION;
+     return round_double(delay);
+}
+
+/**
+ * Estimated time(us) to move object between GPU's on different servers
+ * Note: this could be smaller after implement GPU to GPU direct feature
+ * @param object_size     the size of the object to move, in KB
+*/
+inline uint64_t GPU_to_GPU_delay(uint64_t object_size){
+     uint64_t localgpu_to_localcpu_delay = GPU_to_host_delay(object_size);
+     uint64_t cpu_to_cpu_delay = CPU_to_CPU_delay(object_size);
+     uint64_t remotecpu_to_remotegpu_delay = host_to_GPU_delay(object_size);
+     return localgpu_to_localcpu_delay + cpu_to_cpu_delay + remotecpu_to_remotegpu_delay;
+}
+
+
 #define CASCADE_TIMESTAMP_TAG_FILTER        "CASCADE/timestamp_tag_enabler"
 
 class TimestampLogger {

@@ -23,9 +23,12 @@ class ConsolePrinterOCDPO: public OffCriticalDataPathObserver {
                               const mutils::ByteRepresentable* const value_ptr,
                               const std::unordered_map<std::string,bool>& outputs,
                               ICascadeContext* ctxt,
-                              uint32_t worker_id) override {
-        std::cout << "[console printer ocdpo]: I(" << worker_id << ") received an object with key=" << key_string 
-                  << ", matching prefix=" << key_string.substr(0,prefix_length) << std::endl;
+                              uint32_t worker_id,
+                              std::string adfg) override {
+        // std::cout << "[console printer ocdpo]: I(" << worker_id << ") received an object with key=" << key_string 
+        //           << ", matching prefix=" << key_string.substr(0,prefix_length) << std::endl;
+        dbg_default_trace("------- in ConsolePrinterOCDPO::OffCriticalDataPathObserver  ------");
+        dbg_default_trace("[console printer ocdpo]: I({}) received an object with key={}, matching prefix={}", worker_id, key_string, key_string.substr(0,prefix_length));
     }
 
     static std::shared_ptr<OffCriticalDataPathObserver> ocdpo_ptr;

@@ -30,7 +30,8 @@ class PipelineOCDPO: public OffCriticalDataPathObserver {
             const mutils::ByteRepresentable* const value_ptr,
             const std::unordered_map<std::string,bool>& outputs,
             ICascadeContext* ctxt,
-            uint32_t worker_id) override {
+            uint32_t worker_id,
+            std::string adfg) override {
         //TODO: implementing the pipeline logics.
         auto* typed_ctxt = dynamic_cast<DefaultCascadeContextType*>(ctxt);
         const auto* const value = dynamic_cast<const ObjectWithStringKey* const>(value_ptr);

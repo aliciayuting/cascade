@@ -83,7 +83,8 @@ namespace cascade {
                                  const mutils::ByteRepresentable* const value_ptr,
                                  const std::unordered_map<std::string,bool>& outputs,
                                  ICascadeContext* ctxt,
-                                 uint32_t worker_id) = 0;
+                                 uint32_t worker_id,
+                                 std::string adfg="") = 0;
     };
     /**
      * Action is an command passed from the on critical data path logic (cascade watcher) to the off critical data path
@@ -119,6 +120,7 @@ namespace cascade {
         std::string                     key_string;
         uint32_t                        prefix_length;
         persistent::version_t           version;
+        std::string                     adfg;
         std::shared_ptr<OffCriticalDataPathObserver>   ocdpo_ptr;
         std::shared_ptr<mutils::ByteRepresentable>     value_ptr;
         std::unordered_map<std::string,bool>           outputs;
@@ -131,6 +133,7 @@ namespace cascade {
             key_string(other.key_string),
             prefix_length(other.prefix_length),
             version(other.version),
+            adfg(other.adfg),
             ocdpo_ptr(std::move(other.ocdpo_ptr)),
             value_ptr(std::move(other.value_ptr)),
             outputs(std::move(other.outputs)) {}
@@ -138,6 +141,7 @@ namespace cascade {
          * Constructor
          * @param   _key_string
          * @param   _version
+         * @param   _adfg
          * @param   _ocdpo_ptr const reference rvalue
          * @param   _value_ptr
          */
@@ -145,6 +149,7 @@ namespace cascade {
                const std::string&           _key_string = "",
                const uint32_t               _prefix_length = 0,
                const persistent::version_t& _version = CURRENT_VERSION,
+               const std::string&           _adfg = "",
                const std::shared_ptr<OffCriticalDataPathObserver>&  _ocdpo_ptr = nullptr,
                const std::shared_ptr<mutils::ByteRepresentable>&    _value_ptr = nullptr,
                const std::unordered_map<std::string,bool>           _outputs = {}):
@@ -152,6 +157,7 @@ namespace cascade {
             key_string(_key_string),
             prefix_length(_prefix_length),
             version(_version),
+            adfg(_adfg),
             ocdpo_ptr(_ocdpo_ptr),
             value_ptr(_value_ptr),
             outputs(_outputs) {}
@@ -169,7 +175,8 @@ namespace cascade {
         inline void fire(ICascadeContext* ctxt,uint32_t worker_id) {
             if (value_ptr && ocdpo_ptr) {
                 dbg_default_trace("In {}: [worker_id={}] action is fired.", __PRETTY_FUNCTION__, worker_id);
-                (*ocdpo_ptr)(sender,key_string,prefix_length,version,value_ptr.get(),outputs,ctxt,worker_id);
+                dbg_default_trace("Fired Action name: {}, adfg: {}.", key_string, adfg);
+                (*ocdpo_ptr)(sender,key_string,prefix_length,version,value_ptr.get(),outputs,ctxt,worker_id, adfg);
             }
         }
         inline explicit operator bool() const {
@@ -1829,6 +1836,12 @@ namespace cascade {
         /** Helper function to check local cached group_gpu_models and group_queue_wait_times
         */
         std::string local_cached_info_dump();
+
+        /**
+         * given a prefix of the first task of the dfg generage the adfg result for this instance
+         * @param entry_prefix  entry task pathname
+        */
+        std::string tide_scheduler(std::string entry_prefix);
 
         /**
          * Destructor

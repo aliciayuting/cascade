@@ -267,6 +267,29 @@ ObjectWithUInt64Key::ObjectWithUInt64Key(
     key(_key), 
     blob(_blob.bytes,_blob.size,emplaced) {}
 
+ObjectWithUInt64Key::ObjectWithUInt64Key(
+#ifdef ENABLE_EVALUATION
+                                         const uint64_t _message_id,
+#endif
+                                         const persistent::version_t _version,
+                                         const uint64_t _timestamp_us,
+                                         const persistent::version_t _previous_version,
+                                         const persistent::version_t _previous_version_by_key,
+                                         const uint64_t _key,
+                                         const std::string& _adfg,
+                                         const Blob& _blob,
+                                         bool  emplaced) :
+#ifdef ENABLE_EVALUATION
+    message_id(_message_id),
+#endif
+    version(_version),
+    timestamp_us(_timestamp_us),
+    previous_version(_previous_version),
+    previous_version_by_key(_previous_version_by_key),
+    key(_key), 
+    adfg(_adfg),
+    blob(_blob.bytes,_blob.size,emplaced) {}
+
 // constructor 1 : copy consotructor
 ObjectWithUInt64Key::ObjectWithUInt64Key(const uint64_t _key,
                                          const uint8_t* const _b,
@@ -303,7 +326,47 @@ ObjectWithUInt64Key::ObjectWithUInt64Key(
     key(_key),
     blob(_b, _s) {}
 
-// constructor 2 : move constructor
+// constructor 2 : copy consotructor with adfg
+ObjectWithUInt64Key::ObjectWithUInt64Key(const uint64_t _key,
+                                         const std::string& _adfg,
+                                         const uint8_t* const _b,
+                                         const std::size_t _s) :
+#ifdef ENABLE_EVALUATION
+    message_id(0),
+#endif
+    version(persistent::INVALID_VERSION),
+    timestamp_us(0),
+    previous_version(INVALID_VERSION),
+    previous_version_by_key(INVALID_VERSION),
+    key(_key),
+    adfg(_adfg),
+    blob(_b, _s) {}
+
+// constructor 2.5 : copy constructor
+ObjectWithUInt64Key::ObjectWithUInt64Key(
+#ifdef ENABLE_EVALUATION
+                                         const uint64_t _message_id,
+#endif
+                                         const persistent::version_t _version,
+                                         const uint64_t _timestamp_us,
+                                         const persistent::version_t _previous_version,
+                                         const persistent::version_t _previous_version_by_key,
+                                         const uint64_t _key,
+                                         const std::string& _adfg,
+                                         const uint8_t* const _b,
+                                         const std::size_t _s) :
+#ifdef ENABLE_EVALUATION
+    message_id(_message_id),
+#endif
+    version(_version),
+    timestamp_us(_timestamp_us),
+    previous_version(_previous_version),
+    previous_version_by_key(_previous_version_by_key),
+    key(_key),
+    adfg(_adfg),
+    blob(_b, _s) {}
+
+// constructor 3 : move constructor
 ObjectWithUInt64Key::ObjectWithUInt64Key(ObjectWithUInt64Key&& other) :
 #ifdef ENABLE_EVALUATION
     message_id(other.message_id),
@@ -313,9 +376,10 @@ ObjectWithUInt64Key::ObjectWithUInt64Key(ObjectWithUInt64Key&& other) :
     previous_version(other.previous_version),
     previous_version_by_key(other.previous_version_by_key),
     key(other.key),
+    adfg(other.adfg),
     blob(std::move(other.blob)) {}
 
-// constructor 3 : copy constructor
+// constructor 4 : copy constructor
 ObjectWithUInt64Key::ObjectWithUInt64Key(const ObjectWithUInt64Key& other) :
 #ifdef ENABLE_EVALUATION
     message_id(other.message_id),
@@ -325,6 +389,7 @@ ObjectWithUInt64Key::ObjectWithUInt64Key(const ObjectWithUInt64Key& other) :
     previous_version(other.previous_version),
     previous_version_by_key(other.previous_version_by_key),
     key(other.key),
+    adfg(other.adfg),
     blob(other.blob) {}
 
 // constructor 4 : default invalid constructor
@@ -424,6 +489,14 @@ bool ObjectWithUInt64Key::verify_previous_version(persistent::version_t prev_ver
 
     return ((this->previous_version == persistent::INVALID_VERSION)?true:(this->previous_version >= prev_ver)) &&
            ((this->previous_version_by_key == persistent::INVALID_VERSION)?true:(this->previous_version_by_key >= prev_ver_by_key));
+}
+
+void ObjectWithUInt64Key::set_adfg(const std::string& new_adfg) {
+    this->adfg = new_adfg;
+}
+
+const std::string& ObjectWithUInt64Key::get_adfg() const {
+    return this->adfg;
 }
 
 #ifdef ENABLE_EVALUATION
@@ -598,7 +671,6 @@ ObjectWithStringKey::ObjectWithStringKey(const std::string& _key,
     previous_version(INVALID_VERSION),
     previous_version_by_key(INVALID_VERSION),
     key(_key),
-    adfg(),
     blob(_blob) {}
 // constructor 0.5 : copy/in-place constructor
 ObjectWithStringKey::ObjectWithStringKey(
@@ -620,7 +692,6 @@ ObjectWithStringKey::ObjectWithStringKey(
     previous_version(_previous_version),
     previous_version_by_key(_previous_version_by_key),
     key(_key), 
-    adfg(),
     blob(_blob.bytes,_blob.size,emplaced) {}
 
 ObjectWithStringKey::ObjectWithStringKey(
@@ -658,7 +729,6 @@ ObjectWithStringKey::ObjectWithStringKey(const std::string& _key,
     previous_version(INVALID_VERSION),
     previous_version_by_key(INVALID_VERSION),
     key(_key),
-    adfg(),
     blob(_b, _s) {}
 // constructor 1.5 : copy constructor
 ObjectWithStringKey::ObjectWithStringKey(
@@ -680,10 +750,9 @@ ObjectWithStringKey::ObjectWithStringKey(
     previous_version(_previous_version),
     previous_version_by_key(_previous_version_by_key),
     key(_key), 
-    adfg(),
     blob(_b, _s) {}
 
-// constructor 2 : copy consotructor
+// constructor 2 : copy consotructor with adfg
 ObjectWithStringKey::ObjectWithStringKey(const std::string& _key,
                                          const std::string& _adfg,
                                          const uint8_t* const _b, 
@@ -698,7 +767,8 @@ ObjectWithStringKey::ObjectWithStringKey(const std::string& _key,
     key(_key),
     adfg(_adfg),
     blob(_b, _s) {}
-// constructor 1.5 : copy constructor
+
+// constructor 2.5 : copy constructor with adfg
 ObjectWithStringKey::ObjectWithStringKey(
 #ifdef ENABLE_EVALUATION
                                          const uint64_t _message_id,
@@ -850,7 +920,11 @@ bool ObjectWithStringKey::verify_previous_version(persistent::version_t prev_ver
            ((this->previous_version_by_key == persistent::INVALID_VERSION)?true:(this->previous_version_by_key >= prev_ver_by_key));
 }
 
-const std::string& ObjectWithStringKey::get_adft() const {
+void ObjectWithStringKey::set_adfg(const std::string& new_adfg) {
+    this->adfg = new_adfg;
+}
+
+const std::string& ObjectWithStringKey::get_adfg() const {
     return this->adfg;
 }
 

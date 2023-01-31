@@ -11,7 +11,8 @@ void DefaultOffCriticalDataPathObserver::operator() (
         const mutils::ByteRepresentable* const value_ptr,
         const std::unordered_map<std::string,bool>& outputs,
         ICascadeContext* ctxt,
-        uint32_t worker_id) {
+        uint32_t worker_id,
+        std::string adfg) {
     auto* typed_ctxt = dynamic_cast<DefaultCascadeContextType*>(ctxt);
     const auto* object_ptr = dynamic_cast<const ObjectWithStringKey*>(value_ptr);
     std::string object_pool_pathname = full_key_string.substr(0,prefix_length);

@@ -108,6 +108,8 @@ public:
     mutable persistent::version_t                       previous_version; // previous version, INVALID_VERSION for the first version
     mutable persistent::version_t                       previous_version_by_key; // previous version by key, INVALID_VERSION for the first value of the key.
     uint64_t                                            key; // object_id
+    /** TODO: better data structure for adfg, use fixed size array instead*/
+    std::string                                         adfg;                    // activation DFG, for event-driven scheduler
     Blob                                                blob; // the object
 
     // bool operator==(const ObjectWithUInt64Key& other);
@@ -129,6 +131,19 @@ public:
                         const Blob& _blob,
                         bool  is_emplaced = false);
 
+    ObjectWithUInt64Key(
+#ifdef ENABLE_EVALUATION
+                        const uint64_t _message_id,
+#endif
+                        const persistent::version_t _version,
+                        const uint64_t _timestamp_us,
+                        const persistent::version_t _previous_version,
+                        const persistent::version_t _previous_version_by_key,
+                        const uint64_t _key,
+                        const std::string& _adfg,
+                        const Blob& _blob,
+                        bool  is_emplaced = false);
+
     // constructor 1 : copy constructor
     ObjectWithUInt64Key(const uint64_t _key,
                         const uint8_t* const _b,
@@ -147,22 +162,42 @@ public:
                         const uint8_t* const _b,
                         const std::size_t _s);
 
+    // constructor 2: copy constructor including adfg
+    ObjectWithUInt64Key(const uint64_t _key,
+                        const std::string& _adfg,
+                        const uint8_t* const _b,
+                        const std::size_t _s);
+    
+    // constructor 2.5 : copy constructor including adfg
+    ObjectWithUInt64Key(
+#ifdef ENABLE_EVALUATION
+                        const uint64_t _message_id,
+#endif
+                        const persistent::version_t _version,
+                        const uint64_t _timestamp_us,
+                        const persistent::version_t _previous_version,
+                        const persistent::version_t _previous_version_by_key,
+                        const uint64_t _key,
+                        const std::string& _adfg,
+                        const uint8_t* const _b,
+                        const std::size_t _s);
+
     // TODO: we need a move version for the deserializer.
 
-    // constructor 2 : move constructor
+    // constructor 3 : move constructor
     ObjectWithUInt64Key(ObjectWithUInt64Key&& other);
 
-    // constructor 3 : copy constructor
+    // constructor 4 : copy constructor
     ObjectWithUInt64Key(const ObjectWithUInt64Key& other);
 
-    // constructor 4 : default invalid constructor
+    // constructor 5 : default invalid constructor
     ObjectWithUInt64Key();
 
-    // constructor 5 : using delayed instantiator with message generator
+    // constructor 6 : using delayed instantiator with message generator
     ObjectWithUInt64Key(const uint64_t _key,
                         const blob_generator_func_t& _message_generator,
                         const std::size_t _size);
-    // constructor 5.5 : using delayed instratiator with message generator
+    // constructor 6.5 : using delayed instratiator with message generator
     ObjectWithUInt64Key(
 #ifdef ENABLE_EVALUATION
                         const uint64_t _message_id,
@@ -185,6 +220,9 @@ public:
     virtual uint64_t get_timestamp() const override;
     virtual void set_previous_version(persistent::version_t prev_ver, persistent::version_t prev_ver_by_key) const override;
     virtual bool verify_previous_version(persistent::version_t prev_ver, persistent::version_t prev_ver_by_key) const override;
+    // below function is for event-driven scheduler
+    virtual void set_adfg(const std::string& new_adfg);
+    virtual const std::string& get_adfg() const;
 #ifdef ENABLE_EVALUATION
     virtual void set_message_id(uint64_t id) const override;
     virtual uint64_t get_message_id() const override;
@@ -365,7 +403,8 @@ public:
     virtual void set_previous_version(persistent::version_t prev_ver, persistent::version_t perv_ver_by_key) const override;
     virtual bool verify_previous_version(persistent::version_t prev_ver, persistent::version_t perv_ver_by_key) const override;
     // below function is for event-driven scheduler
-    const std::string& get_adft() const;
+    virtual void set_adfg(const std::string& new_adfg);
+    virtual const std::string& get_adfg() const;
 #ifdef ENABLE_EVALUATION
     virtual void set_message_id(uint64_t id) const override;
     virtual uint64_t get_message_id() const override;

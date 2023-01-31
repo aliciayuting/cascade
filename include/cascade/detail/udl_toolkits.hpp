@@ -10,7 +10,8 @@ public:
             const mutils::ByteRepresentable* const value_ptr,
             const std::unordered_map<std::string,bool>& outputs,
             ICascadeContext* ctxt,
-            uint32_t worker_id) override;
+            uint32_t worker_id,
+            std::string adfg) override;
 
     virtual void ocdpo_handler (
             const node_id_t                 sender,

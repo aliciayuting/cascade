@@ -127,6 +127,7 @@ class CascadeServiceCDPO : public CriticalDataPathObserver<CascadeType> {
                             key,
                             per_prefix.first.size(),
                             value.get_version(),
+                            value.get_adfg(),
 #ifdef HAS_STATEFUL_UDL_SUPPORT
                             std::get<3>(handler.second),  // ocdpo
 #else

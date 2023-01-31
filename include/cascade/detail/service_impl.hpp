@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <cascade/config.h>
 #include <cascade/data_flow_graph.hpp>
 #include <chrono>
@@ -5,7 +6,9 @@
 #include <derecho/core/derecho_exception.hpp>
 #include <derecho/core/detail/rpc_utils.hpp>
 #include <derecho/core/notification.hpp>
+#include <iostream>
 #include <map>
+#include <string>
 #include <typeindex>
 #include <variant>
 #include <vector>
@@ -2129,7 +2132,6 @@ void CascadeContext<CascadeTypes...>::construct() {
     auto dfgs = DataFlowGraph::get_data_flow_graphs();
     for(auto& dfg : dfgs) {
         pre_adfg_t pre_adfg;
-        std::string entry_pathname;
         for(auto& vertex : dfg.vertices) {
             uint32_t result_size = 0;
             uint64_t expected_runtime = 0;
@@ -2147,9 +2149,8 @@ void CascadeContext<CascadeTypes...>::construct() {
                                 vertex.second.configurations.at(edge.first)),
                         edge.second);
                 expected_runtime = expected_runtime + vertex.second.expected_execution_timeus.at(edge.first);
-                result_size = result_size + vertex.second.expected_execution_timeus.at(edge.first);
+                result_size = result_size + vertex.second.expected_output_size.at(edge.first);
             }
-            entry_pathname = dfg.sorted_pathnames[0];
             pre_adfg.emplace(std::piecewise_construct, std::forward_as_tuple(entry_pathname),
                     std::forward_as_tuple(vertex.second.required_objects_pathnames, 
                                         vertex.second.required_models,
@@ -2157,8 +2158,13 @@ void CascadeContext<CascadeTypes...>::construct() {
                                         dfg.sorted_pathnames, 
                                         result_size, expected_runtime));
         }
-        std::unique_lock<std::shared_mutex> wlck(this->pre_adfg_dependencies_mutex);
-        pre_adfg_dependencies.emplace(entry_pathname, pre_adfg);
+        if (dfg.sorted_pathnames.size() != 0){
+            std::unique_lock<std::shared_mutex> wlck(this->pre_adfg_dependencies_mutex);
+            std::string entry_pathname = dfg.sorted_pathnames[0];
+            pre_adfg_dependencies.emplace(entry_pathname, pre_adfg);
+        }else{
+            dbg_default_warn("dfg with uid={}, include no vertex", dfg.id);
+        }
         // Testing purposes
         dfg.dump();
     }
@@ -2303,6 +2309,14 @@ void CascadeContext<CascadeTypes...>::workhorse(uint32_t worker_id, struct actio
     while(is_running) {
         // waiting for an action
         Action action = std::move(aq.action_buffer_dequeue(is_running));
+        // TIDE SCHEDULER: approach 2. Less preferable
+        /** TODO: optimize this*/
+        std::string vertex_pathname = (action.key_string).substr(action.prefix_length);
+        if(action.adfg.empty() ){
+            dbg_default_trace("~~~ vertex_pathname: {}, about to run the scheduler", vertex_pathname);
+            action.adfg = this->tide_scheduler(vertex_pathname);   /** TODO: remember to save adfg at emit() */
+            dbg_default_trace("~~~ vertex_pathname: {}, scheduled adfg: {}", vertex_pathname, action.adfg);
+        }
         // if action_buffer_dequeue return with is_running == false, value_ptr is invalid(nullptr).
         action.fire(this, worker_id);
         /** TODO: use expected run_time instead of 1. */
@@ -2601,7 +2615,7 @@ bool CascadeContext<CascadeTypes...>::check_if_model_in_gpu(node_id_t node_id, u
     /** TODO: move this threshold to config, currently set it to every 10sec*/
     if(cur_us - last_group_gpu_models_update_timeus > 10000000) {
         last_group_gpu_models_update_timeus = cur_us;
-        std::unique_lock<std::mutex> wlck(this->group_gpu_models_mutex);
+        std::unique_lock<std::shared_mutex> wlck(this->group_gpu_models_mutex);
         this->get_service_client_ref().get_updated_group_gpu_models(this->group_gpu_models);
     }
     std::shared_lock rlck(this->group_gpu_models_mutex);
@@ -2627,6 +2641,91 @@ std::string CascadeContext<CascadeTypes...>::local_cached_info_dump() {
         out = out + "]\n";
     }
     return out;
+}
+
+
+
+template <typename... CascadeTypes>
+std::string CascadeContext<CascadeTypes...>::tide_scheduler(std::string entry_prefix){
+     // vertex pathname -> (node_id, finish_time(us))
+     // in the algorithm denote task ~ vertex pathname
+     std::unordered_map<std::string, std::tuple<node_id_t,uint64_t>> allocated_tasks_info;
+     std::vector<node_id_t> workers_set = this->get_service_client_ref().get_members();
+     pre_adfg_t pre_adfg = this->get_pre_adfg(entry_prefix);
+     uint64_t cur_us = std::chrono::duration_cast<std::chrono::microseconds>(
+                              std::chrono::high_resolution_clock::now().time_since_epoch())
+                              .count();
+     /** TODO: optimize this get_sorted_pathnames step by better design of where to store sorted_pathnames in pre_adfg_t */
+     std::vector<std::string>& sorted_pathnames = std::get<3>(pre_adfg.at(entry_prefix));
+     for(auto& pathname: sorted_pathnames){
+          auto& dependencies = pre_adfg.at(pathname);
+          // 0. PRE-COMPUTE (used later by 2. case1) get the earliest start time, suppose all preq_tasks need to transfer data
+          uint64_t prev_EST = cur_us;
+          // the worker_ids where pre-requisit tasks are executed
+          std::set<node_id_t> preq_workers;
+          std::set<std::string>& required_tasks = std::get<0>(dependencies);
+          for(auto& preq_task : required_tasks){
+               preq_workers.emplace(std::get<0>(allocated_tasks_info.at(preq_task)));
+               uint64_t preq_finish_time = std::get<0>(allocated_tasks_info.at(preq_task));
+               uint32_t preq_result_size = std::get<4>(pre_adfg.at(pathname));
+               uint64_t preq_arrive_time = preq_finish_time + GPU_to_GPU_delay(preq_result_size);
+               prev_EST = std::max(prev_EST, preq_arrive_time);
+          }
+          if(pathname == sorted_pathnames[0]){ // first task
+               /** TODO: assumming input_size=output_size, for finer-grained HEFT, use input size instead of output size*/
+               prev_EST += host_to_GPU_delay(std::get<4>(pre_adfg.at(pathname))); 
+          }
+          std::map<node_id_t, uint64_t> workers_start_times;
+          for(node_id_t cur_worker: workers_set){
+               uint64_t cur_worker_waittime = 0;
+               uint64_t model_fetch_time = 0;
+               cur_worker_waittime = this->check_queue_wait_time(cur_worker);
+               bool models_in_cache;
+               auto& required_models = std::get<1>(pre_adfg.at(pathname));
+               auto& required_models_size = std::get<2>(pre_adfg.at(pathname));
+               for(size_t idx = 0; idx < required_models.size(); idx ++){
+                    models_in_cache = this->check_if_model_in_gpu(cur_worker, required_models[idx]);
+                    if(!models_in_cache){
+                         /** TODO: current design assume host loaded all models at the beginning.
+                          *        later can extend to remote_host_to_GPU, with the udl&model centraliezd store
+                         */
+                         model_fetch_time = model_fetch_time + host_to_GPU_delay(required_models_size[idx]);
+                    }
+               } 
+               /** case 2.1 cur_woker is not the same worker as any of the pre-req tasks'
+                *  input fetching/sending is not blocked by waiting queue, whereas model fetching is
+                */
+               uint64_t start_time;
+               if(preq_workers.find(cur_worker) == preq_workers.end()){
+                    start_time = std::max(prev_EST, cur_us + cur_worker_waittime + model_fetch_time);
+               }else{//case 2.2 cur_worker is on the same node of one of the pre-req tasks
+                    uint64_t preq_arrival_time = 0;
+                    for(auto& preq_task : required_tasks){
+                         node_id_t& preq_worker = std::get<0>(allocated_tasks_info.at(preq_task));
+                         uint64_t& preq_finish_time = std::get<1>(allocated_tasks_info.at(preq_task));
+                         if(cur_worker == preq_worker){
+                              preq_arrival_time = std::max(preq_arrival_time, preq_finish_time);
+                         }else{
+                              preq_arrival_time = std::max(preq_arrival_time, preq_finish_time + GPU_to_GPU_delay(std::get<4>(pre_adfg.at(pathname))));
+                              start_time = std::max(preq_arrival_time, cur_us + cur_worker_waittime + model_fetch_time);
+                         }
+                    }
+               }
+               workers_start_times.emplace(cur_worker,start_time);
+          }
+          auto it = std::min_element(workers_start_times.begin(), workers_start_times.end(),
+                                                       [](const auto& l, const auto& r) { return l.second < r.second; });
+          /** TODO: TEST THIS!!! https://stackoverflow.com/questions/2659248/how-can-i-find-the-minimum-value-in-a-map */
+          node_id_t selected_worker = it->second;
+          uint64_t cur_task_finish_time = it->first + std::get<5>(pre_adfg.at(pathname));
+          allocated_tasks_info.emplace(std::piecewise_construct, std::forward_as_tuple(pathname), std::forward_as_tuple(selected_worker, cur_task_finish_time));
+     }    
+     std::string allocated_machines;
+     for(auto& pathname: sorted_pathnames){
+          allocated_machines +=  std::to_string(std::get<1>(allocated_tasks_info.at(pathname))) + ",";
+     }
+     std::cout << "Allocated machines are: " << allocated_machines << std::endl;
+     return allocated_machines;
 }
 
 template <typename... CascadeTypes>
