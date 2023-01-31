@@ -2132,6 +2132,10 @@ void CascadeContext<CascadeTypes...>::construct() {
     auto dfgs = DataFlowGraph::get_data_flow_graphs();
     for(auto& dfg : dfgs) {
         pre_adfg_t pre_adfg;
+        std::string entry_pathname;
+        if (dfg.sorted_pathnames.size() != 0){
+            entry_pathname = dfg.sorted_pathnames[0];
+        }
         for(auto& vertex : dfg.vertices) {
             uint32_t result_size = 0;
             uint64_t expected_runtime = 0;
@@ -2158,9 +2162,8 @@ void CascadeContext<CascadeTypes...>::construct() {
                                         dfg.sorted_pathnames, 
                                         result_size, expected_runtime));
         }
-        if (dfg.sorted_pathnames.size() != 0){
+        if (!entry_pathname.empty()){
             std::unique_lock<std::shared_mutex> wlck(this->pre_adfg_dependencies_mutex);
-            std::string entry_pathname = dfg.sorted_pathnames[0];
             pre_adfg_dependencies.emplace(entry_pathname, pre_adfg);
         }else{
             dbg_default_warn("dfg with uid={}, include no vertex", dfg.id);
@@ -2311,7 +2314,7 @@ void CascadeContext<CascadeTypes...>::workhorse(uint32_t worker_id, struct actio
         Action action = std::move(aq.action_buffer_dequeue(is_running));
         // TIDE SCHEDULER: approach 2. Less preferable
         /** TODO: optimize this*/
-        std::string vertex_pathname = (action.key_string).substr(action.prefix_length);
+        std::string vertex_pathname = (action.key_string).substr(0, action.prefix_length);
         if(action.adfg.empty() ){
             dbg_default_trace("~~~ vertex_pathname: {}, about to run the scheduler", vertex_pathname);
             action.adfg = this->tide_scheduler(vertex_pathname);   /** TODO: remember to save adfg at emit() */
