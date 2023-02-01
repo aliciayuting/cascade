@@ -37,6 +37,9 @@ void DefaultOffCriticalDataPathObserver::operator() (
                 uint64_t              message_id,
 #endif
                 const Blob& blob) {
+                    pre_adfg_t pre_adfg = typed_ctxt->get_pre_adfg(object_pool_pathname);
+                    std::vector<std::string>& sorted_pathnames = std::get<3>(pre_adfg.at(object_pool_pathname));
+                    /** TODO: check adfg to find out the machines!! */
                 for (const auto& okv: outputs) {
                     std::string prefix = okv.first;
                     while (!prefix.empty() && prefix.back() == PATH_SEPARATOR) prefix.pop_back();

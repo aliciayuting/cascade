@@ -2046,7 +2046,7 @@ uint32_t ServiceClient<CascadeTypes...>::get_subgroup_type_index() {
 }
 
 template <typename... CascadeTypes>
-void ServiceClient<CascadeTypes...>::get_updated_group_gpu_models(std::unordered_map<node_id_t, std::set<uint32_t>> _group_gpu_models) {
+void ServiceClient<CascadeTypes...>::get_updated_group_gpu_models(std::unordered_map<node_id_t, std::set<uint32_t>>& _group_gpu_models) {
     std::vector<node_id_t> nodes = group_ptr->get_members();
     for(node_id_t node_id : nodes){
         uint64_t encoded_models = group_ptr->get_cache_models_info(node_id);
@@ -2061,7 +2061,7 @@ void ServiceClient<CascadeTypes...>::get_updated_group_gpu_models(std::unordered
 }
 
 template <typename... CascadeTypes>
-void ServiceClient<CascadeTypes...>::get_updated_group_queue_wait_times(std::unordered_map<node_id_t, uint64_t> _group_queue_wait_times) {
+void ServiceClient<CascadeTypes...>::get_updated_group_queue_wait_times(std::unordered_map<node_id_t, uint64_t>& _group_queue_wait_times) {
     std::vector<node_id_t> nodes = group_ptr->get_members();
     for(node_id_t node_id : nodes) {
         uint64_t load_info = group_ptr->get_load_info(node_id);
@@ -2155,7 +2155,7 @@ void CascadeContext<CascadeTypes...>::construct() {
                 expected_runtime = expected_runtime + vertex.second.expected_execution_timeus.at(edge.first);
                 result_size = result_size + vertex.second.expected_output_size.at(edge.first);
             }
-            pre_adfg.emplace(std::piecewise_construct, std::forward_as_tuple(entry_pathname),
+            pre_adfg.emplace(std::piecewise_construct, std::forward_as_tuple(vertex.first),
                     std::forward_as_tuple(vertex.second.required_objects_pathnames, 
                                         vertex.second.required_models,
                                         vertex.second.required_models_size, 
@@ -2316,7 +2316,6 @@ void CascadeContext<CascadeTypes...>::workhorse(uint32_t worker_id, struct actio
         /** TODO: optimize this*/
         std::string vertex_pathname = (action.key_string).substr(0, action.prefix_length);
         if(action.adfg.empty() ){
-            dbg_default_trace("~~~ vertex_pathname: {}, about to run the scheduler", vertex_pathname);
             action.adfg = this->tide_scheduler(vertex_pathname);   /** TODO: remember to save adfg at emit() */
             dbg_default_trace("~~~ vertex_pathname: {}, scheduled adfg: {}", vertex_pathname, action.adfg);
         }
@@ -2325,9 +2324,6 @@ void CascadeContext<CascadeTypes...>::workhorse(uint32_t worker_id, struct actio
         /** TODO: use expected run_time instead of 1. */
         this->local_queue_wait_time --;
         this->get_service_client_ref().send_local_queue_wait_time(this->local_queue_wait_time);
-        // // For testing purposes
-        auto members = this->get_service_client_ref().get_members();
-        this->check_queue_wait_time(members[0]);
         if(!is_running) {
             do {
                 action = std::move(aq.action_buffer_dequeue(is_running));
@@ -2604,6 +2600,9 @@ uint64_t CascadeContext<CascadeTypes...>::check_queue_wait_time(node_id_t node_i
         this->get_service_client_ref().get_updated_group_queue_wait_times(this->group_queue_wait_times);
     }
     std::shared_lock rlck(this->group_queue_wait_times_mutex);
+    if (this->group_queue_wait_times.find(node_id) == this->group_queue_wait_times.end()){
+        dbg_default_warn("CascadeContext::check_queue_wait_time unable to find node {}", node_id);
+    }
     auto wait_time = this->group_queue_wait_times[node_id];
     /** for test purposes*/
     dbg_default_trace(this->local_cached_info_dump());
@@ -2629,7 +2628,7 @@ bool CascadeContext<CascadeTypes...>::check_if_model_in_gpu(node_id_t node_id, u
 template <typename... CascadeTypes>
 std::string CascadeContext<CascadeTypes...>::local_cached_info_dump() {
     std::string out ;
-    out = out + "CascadeContext:\n"
+    out = out + "\nCascadeContext:\n"
         + "\tCached group info:\n"
         + "\tnode_id,  queue_wait_time, cached_models \n";
     std::shared_lock rlck_wait_time(this->group_queue_wait_times_mutex);
@@ -2727,7 +2726,6 @@ std::string CascadeContext<CascadeTypes...>::tide_scheduler(std::string entry_pr
      for(auto& pathname: sorted_pathnames){
           allocated_machines +=  std::to_string(std::get<1>(allocated_tasks_info.at(pathname))) + ",";
      }
-     std::cout << "Allocated machines are: " << allocated_machines << std::endl;
      return allocated_machines;
 }
 

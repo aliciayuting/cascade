@@ -1503,13 +1503,13 @@ namespace cascade {
          * Get the updated gpu_models of all nodes in the group from derechoSST
          * @param  _group_gpu_models     CascadeContext cached group's gpu_models information to update
         */
-        void get_updated_group_gpu_models(std::unordered_map<node_id_t, std::set<uint32_t>> _group_gpu_models);
+        void get_updated_group_gpu_models(std::unordered_map<node_id_t, std::set<uint32_t>>& _group_gpu_models);
 
         /**
          * Get the updated load_info of all nodes in the group from derechoSST
          * @param  _group_queue_wait_times     CascadeContext cached group's queue_wait_time information to update
         */
-        void get_updated_group_queue_wait_times(std::unordered_map<node_id_t, uint64_t> _group_queue_wait_times);
+        void get_updated_group_queue_wait_times(std::unordered_map<node_id_t, uint64_t>& _group_queue_wait_times);
 
         /**
          * Send the local updated gpu_models to all nodes in the group, via derechoSST

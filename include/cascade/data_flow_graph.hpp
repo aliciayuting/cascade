@@ -202,6 +202,10 @@ public:
             for (auto& m: required_models) {
                 out << m << ",";
             }
+            out << "required model sizes: ";
+            for (auto& ms: required_models_size) {
+                out << ms << ",";
+            }
             out << "\nrequired objects pathnames: ";
             for (auto& rop: required_objects_pathnames) {
                 out << rop << ",";

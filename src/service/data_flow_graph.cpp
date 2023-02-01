@@ -55,15 +55,11 @@ DataFlowGraph::DataFlowGraph(const json& dfg_conf):
             // required_model_list
             if (it->contains(DFG_JSON_REQUIRED_MODELS_LIST)){
                 dfgv.required_models.emplace_back((*it)[DFG_JSON_REQUIRED_MODELS_LIST].at(i).get<uint32_t>());
-            } else{
-                dfgv.required_models.emplace_back(0);
-            }
+            } 
             // required_model_size_list
             if (it->contains(DFG_JSON_REQUIRED_MODELS_SIZE_LIST)){
                 dfgv.required_models_size.emplace_back((*it)[DFG_JSON_REQUIRED_MODELS_SIZE_LIST].at(i).get<uint32_t>());
-            } else{
-                dfgv.required_models_size.emplace_back(0);
-            }
+            } 
             // expected_output_size in KB
             if (it->contains(DFG_JSON_UDL_OUTPUT_SIZE_LIST)){
                 dfgv.expected_output_size.emplace(udl_uuid, (*it)[DFG_JSON_UDL_OUTPUT_SIZE_LIST].at(i).get<uint32_t>());
@@ -84,6 +80,7 @@ DataFlowGraph::DataFlowGraph(const json& dfg_conf):
                 dfgv.edges.emplace(udl_uuid,std::unordered_map<std::string,bool>{});
             }
             for(auto& kv:dest) {
+                dbg_default_trace("data_flow_graph.cpp about to add and edge name:[{}]  to pathname:[{}].", kv.first, dfgv.pathname);
                 if (kv.first.back() == PATH_SEPARATOR) {
                     dfgv.edges[udl_uuid].emplace(kv.first,(kv.second==DFG_JSON_TRIGGER_PUT)?true:false);
                 } else {
@@ -112,27 +109,26 @@ DataFlowGraph::DataFlowGraph(const json& dfg_conf):
     while(!next_verticies_to_process.empty()){
         std::string proc_vertex_pathname = next_verticies_to_process.back();
         next_verticies_to_process.pop_back();
-        if(std::find(this->sorted_pathnames.begin(), this->sorted_pathnames.end(), proc_vertex_pathname) == this->sorted_pathnames.end()){
+        bool has_ranked = std::find(this->sorted_pathnames.begin(), this->sorted_pathnames.end(), proc_vertex_pathname) != this->sorted_pathnames.end();
+        // check if required verticies are in the ranked_verticies already
+        bool ranked_all_required = true;
+        for(auto& required_pathname: vertices.at(proc_vertex_pathname).required_objects_pathnames){
+            ranked_all_required = std::find(this->sorted_pathnames.begin(), this->sorted_pathnames.end(), required_pathname) != this->sorted_pathnames.end();
+            if(!ranked_all_required){
+                break;
+            }
+        }
+        if(!has_ranked && ranked_all_required ){
             this->sorted_pathnames.emplace_back(proc_vertex_pathname);
         }
         const auto& vertex = vertices.at(proc_vertex_pathname);
         for(const auto& uuid_map: vertex.edges){
             for(const auto& edge: uuid_map.second){
-                auto pathname = edge.first;
-                bool has_ranked = std::find(this->sorted_pathnames.begin(), this->sorted_pathnames.end(), pathname) != this->sorted_pathnames.end();
-                if(has_ranked) 
-                    continue;
-                // check if required verticies are in the ranked_verticies already
-                bool ranked_all_required = true;
-                for(auto& required_pathname: vertices.at(pathname).required_objects_pathnames){
-                    ranked_all_required = std::find(this->sorted_pathnames.begin(), this->sorted_pathnames.end(), required_pathname) != this->sorted_pathnames.end();
-                    if(!ranked_all_required){
-                        break;
-                    }
-                }
-                if(ranked_all_required){
+                auto pathname = edge.first;  
+                dbg_default_trace("data_flow_graph.cpp, about to emplace to next_verticies_to_process:[{}]",pathname);
+                if( std::find(this->sorted_pathnames.begin(), this->sorted_pathnames.end(), pathname) == this->sorted_pathnames.end()){
                     next_verticies_to_process.emplace_back(pathname);
-                }    
+                }        
             }
         }   
     }
