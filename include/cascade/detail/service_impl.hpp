@@ -2516,9 +2516,23 @@ match_results_t CascadeContext<CascadeTypes...>::get_prefix_handlers(const std::
 }
 
 template <typename... CascadeTypes>
-pre_adfg_t CascadeContext<CascadeTypes...>::get_pre_adfg(const std::string& entry_pathname) {
+pre_adfg_t CascadeContext<CascadeTypes...>::get_pre_adfg(const std::string& vertex_pathname) {
     std::shared_lock rlck(this->pre_adfg_dependencies_mutex);
-    return this->pre_adfg_dependencies.at(entry_pathname);
+    for(auto& pre_adfg: this->pre_adfg_dependencies){
+        // vertex_pathname is an entry_path
+        if(pre_adfg.first == vertex_pathname){
+            return pre_adfg.second;
+        }else{
+            for(auto& vertex_info: pre_adfg.second){
+                if(vertex_info.first == vertex_pathname){
+                    return pre_adfg.second;
+                }
+            }
+        }
+    }
+    dbg_default_warn("pre_adfg not exist for pathname[{}]", vertex_pathname);
+    pre_adfg_t empty_pre_adfg;
+    return empty_pre_adfg;
 }
 
 template <typename... CascadeTypes>
@@ -2605,7 +2619,7 @@ uint64_t CascadeContext<CascadeTypes...>::check_queue_wait_time(node_id_t node_i
     }
     auto wait_time = this->group_queue_wait_times[node_id];
     /** for test purposes*/
-    dbg_default_trace(this->local_cached_info_dump());
+    // dbg_default_trace(this->local_cached_info_dump());
     return wait_time;
 }
 

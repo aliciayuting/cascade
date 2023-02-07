@@ -1610,7 +1610,6 @@ namespace cascade {
                         uint64_t                                        // estimated excution time in us
                     >
                 >;
-
     template <typename... CascadeTypes>
     class CascadeContext: public ICascadeContext {
     private:
@@ -1793,7 +1792,7 @@ namespace cascade {
          * Helper function for adfg construction
          * @param entry_pathname        - the path name of the entry vertex of the dfg
         */
-        virtual pre_adfg_t get_pre_adfg(const std::string& entry_pathname);
+        virtual pre_adfg_t get_pre_adfg(const std::string& vertex_pathname);
         /**
          * post an action to the Context for processing.
          *

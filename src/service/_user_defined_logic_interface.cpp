@@ -37,13 +37,24 @@ void DefaultOffCriticalDataPathObserver::operator() (
                 uint64_t              message_id,
 #endif
                 const Blob& blob) {
-                    pre_adfg_t pre_adfg = typed_ctxt->get_pre_adfg(object_pool_pathname);
-                    std::vector<std::string>& sorted_pathnames = std::get<3>(pre_adfg.at(object_pool_pathname));
+                    dbg_default_trace("~~~~~~ GREAT HERERERERE  ~~~~~~");
+                    std::string pre_adfg_pathname = object_pool_pathname;
+                    if(object_pool_pathname.back() != PATH_SEPARATOR) {
+                        pre_adfg_pathname = object_pool_pathname + PATH_SEPARATOR;
+                    }
+                    pre_adfg_t pre_adfg = typed_ctxt->get_pre_adfg(pre_adfg_pathname);
+                    std::vector<std::string> sorted_pathnames;
+                    if(!pre_adfg.empty()){
+                        sorted_pathnames = std::get<3>(pre_adfg.at(pre_adfg_pathname));
+                    }
+                
+                     
                     /** TODO: check adfg to find out the machines!! */
                 for (const auto& okv: outputs) {
                     std::string prefix = okv.first;
                     while (!prefix.empty() && prefix.back() == PATH_SEPARATOR) prefix.pop_back();
                     std::string new_key = (prefix.empty()? key : prefix+PATH_SEPARATOR+key);
+                    dbg_default_trace("~~~~~Object to send: key[{}] ~~~~~", new_key);
                     // emplace constructor to avoid copy:
                     ObjectWithStringKey obj_to_send(
 #ifdef ENABLE_EVALUATION
@@ -54,10 +65,11 @@ void DefaultOffCriticalDataPathObserver::operator() (
                             previous_version,
                             previous_version_by_key,
                             new_key,
+                            adfg,
                             blob,
                             true);
                     if (okv.second) {
-                        typed_ctxt->get_service_client_ref().trigger_put(obj_to_send);
+                        typed_ctxt->get_service_client_ref().put<VolatileCascadeStoreWithStringKey>(obj_to_send, 0, 0);
                     } else {
                         typed_ctxt->get_service_client_ref().put_and_forget(obj_to_send);
                     }
