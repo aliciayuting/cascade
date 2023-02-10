@@ -777,6 +777,52 @@ namespace cascade {
         void collective_trigger_put(const typename SubgroupType::ObjectType& object,
                 uint32_t subgroup_index,
                 std::unordered_map<node_id_t,std::unique_ptr<derecho::rpc::QueryResults<void>>>& nodes_and_futures);
+    
+    protected:
+        /**
+         * "type_recursive_single_trigger_put" is a helper function for internal use only.
+         * @type_index              the index of the subgroup type in the CascadeTypes... list. and the FirstType,
+         *                          SecondType, .../ RestTypes should be in the same order.
+         * @object                  the object to write
+         * @subgroup_index          the subgroup index in the subgroup type designated by type_index
+         * @node_id                 the node_id of object to write to
+         */
+        template <typename ObjectType, typename FirstType, typename SecondType, typename... RestTypes>
+        derecho::rpc::QueryResults<void> type_recursive_single_node_trigger_put(
+                uint32_t type_index,
+                const ObjectType& object,
+                uint32_t subgroup_index,
+                node_id_t node_id);
+
+        template <typename ObjectType, typename LastType>
+        derecho::rpc::QueryResults<void> type_recursive_single_node_trigger_put(
+                uint32_t type_index,
+                const ObjectType& object,
+                uint32_t subgroup_index,
+                node_id_t node_id);
+        /**
+         * "single_node_trigger_put" writes an object to a specific node. Only for internal use by scheduler.
+         *  
+         * Similar logic as collective_trigger_put, omitted the loop for set of nodes 
+         *
+         * @param object            the object to write.
+         * @param subugroup_index   the subgroup index of CascadeType
+         * @param node_id           node_id that p2p trigger_put to
+         */
+        template <typename SubgroupType>
+        derecho::rpc::QueryResults<void> single_node_trigger_put(const typename SubgroupType::ObjectType& ObjectWithUInt64Key,
+                uint32_t subgroup_index,
+                node_id_t node_id);
+    public:
+        /**
+         * "single_node_trigger_put" writes an object to a specific node. 
+         *  This function is supposed to be internally use by emit function to send tasks to scheduled gpu task execution
+         *
+         * @param object            the object to write.
+         * @param node_id           node_id that p2p trigger_put to
+         */
+        template <typename ObjectType>
+        derecho::rpc::QueryResults<void> single_node_trigger_put(const ObjectType& ObjectWithUInt64Key, node_id_t node_id);
 
         /**
          * "remove" deletes an object with the given key.

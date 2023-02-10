@@ -655,6 +655,69 @@ derecho::rpc::QueryResults<void> ServiceClient<CascadeTypes...>::trigger_put(
 
 template <typename... CascadeTypes>
 template <typename ObjectType, typename FirstType, typename SecondType, typename... RestTypes>
+derecho::rpc::QueryResults<void> ServiceClient<CascadeTypes...>::type_recursive_single_node_trigger_put(
+        uint32_t type_index,
+        const ObjectType& value,
+        uint32_t subgroup_index,
+        node_id_t node_id) {
+    if(type_index == 0) {
+        return single_node_trigger_put<FirstType>(value, subgroup_index, node_id);
+    } else {
+        return type_recursive_single_node_trigger_put<ObjectType, SecondType, RestTypes...>(type_index - 1, value, subgroup_index, node_id);
+    }
+}
+
+template <typename... CascadeTypes>
+template <typename ObjectType, typename LastType>
+derecho::rpc::QueryResults<void> ServiceClient<CascadeTypes...>::type_recursive_single_node_trigger_put(
+        uint32_t type_index,
+        const ObjectType& value,
+        uint32_t subgroup_index,
+        node_id_t node_id) {
+    if(type_index == 0) {
+        return single_node_trigger_put<LastType>(value, subgroup_index, node_id);
+    } else {
+        throw derecho::derecho_exception(std::string(__PRETTY_FUNCTION__) + ": type index is out of boundary.");
+    }
+}
+
+template <typename... CascadeTypes>
+template <typename SubgroupType>
+derecho::rpc::QueryResults<void> ServiceClient<CascadeTypes...>::single_node_trigger_put(
+        const typename SubgroupType::ObjectType& object,
+        uint32_t subgroup_index,
+        node_id_t node_id) {
+    std::lock_guard<std::mutex> lck(this->group_ptr_mutex);
+    if(group_ptr->template get_my_shard<SubgroupType>(subgroup_index) != -1) {
+        auto& subgroup_handle = group_ptr->template get_subgroup<SubgroupType>(subgroup_index);
+        return subgroup_handle.template p2p_send<RPC_NAME(trigger_put)>(node_id, object);
+    } else {
+        auto& subgroup_handle = group_ptr->template get_nonmember_subgroup<SubgroupType>(subgroup_index);
+        return subgroup_handle.template p2p_send<RPC_NAME(trigger_put)>(node_id, object);
+    }
+}
+
+template <typename... CascadeTypes>
+template <typename ObjectType>
+derecho::rpc::QueryResults<void> ServiceClient<CascadeTypes...>::single_node_trigger_put(
+        const ObjectType& object,
+        node_id_t node_id) {
+    uint32_t type_index, subgroup_index;
+    int32_t shard_index;
+    if(!is_external_client()) {
+        std::tie(type_index, subgroup_index, shard_index) = group_ptr->get_node_shard_index(node_id);
+    } else {
+        std::tie(type_index, subgroup_index, shard_index) = external_group_ptr->get_node_shard_index(node_id);
+    }
+    if(shard_index >= 0 ){
+        return type_recursive_single_node_trigger_put(type_index, object, subgroup_index, node_id);
+    }else{
+        throw derecho::derecho_exception(std::string(__PRETTY_FUNCTION__) + ": node_id(" + std::to_string(node_id) + ") does not exist");
+    }
+}
+
+template <typename... CascadeTypes>
+template <typename ObjectType, typename FirstType, typename SecondType, typename... RestTypes>
 derecho::rpc::QueryResults<void> ServiceClient<CascadeTypes...>::type_recursive_trigger_put(
         uint32_t type_index,
         const ObjectType& value,
@@ -2316,8 +2379,14 @@ void CascadeContext<CascadeTypes...>::workhorse(uint32_t worker_id, struct actio
         /** TODO: optimize this*/
         std::string vertex_pathname = (action.key_string).substr(0, action.prefix_length);
         if(action.adfg.empty() ){
+            uint64_t before_scheduler_us = std::chrono::duration_cast<std::chrono::microseconds>(
+                              std::chrono::high_resolution_clock::now().time_since_epoch())
+                              .count();
             action.adfg = this->tide_scheduler(vertex_pathname);   /** TODO: remember to save adfg at emit() */
-            dbg_default_trace("~~~ vertex_pathname: {}, scheduled adfg: {}", vertex_pathname, action.adfg);
+            uint64_t after_scheduler_us = std::chrono::duration_cast<std::chrono::microseconds>(
+                              std::chrono::high_resolution_clock::now().time_since_epoch())
+                              .count();
+            dbg_default_trace("~~~ vertex_pathname: {}, scheduled adfg: {}, time[{}]us", vertex_pathname, action.adfg, after_scheduler_us - before_scheduler_us);
         }
         // if action_buffer_dequeue return with is_running == false, value_ptr is invalid(nullptr).
         action.fire(this, worker_id);
