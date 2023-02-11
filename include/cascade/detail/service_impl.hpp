@@ -710,7 +710,7 @@ derecho::rpc::QueryResults<void> ServiceClient<CascadeTypes...>::single_node_tri
         std::tie(type_index, subgroup_index, shard_index) = external_group_ptr->get_node_shard_index(node_id);
     }
     if(shard_index >= 0 ){
-        return type_recursive_single_node_trigger_put(type_index, object, subgroup_index, node_id);
+        return this->template type_recursive_single_node_trigger_put<ObjectType, CascadeTypes...>(type_index, object, subgroup_index, node_id);
     }else{
         throw derecho::derecho_exception(std::string(__PRETTY_FUNCTION__) + ": node_id(" + std::to_string(node_id) + ") does not exist");
     }

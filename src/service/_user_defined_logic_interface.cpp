@@ -1,4 +1,5 @@
 #include <cascade/detail/_user_defined_logic_interface.hpp>
+#include <regex>
 
 namespace derecho {
 namespace cascade {
@@ -43,13 +44,14 @@ void DefaultOffCriticalDataPathObserver::operator() (
                         pre_adfg_pathname = object_pool_pathname + PATH_SEPARATOR;
                     }
                     pre_adfg_t pre_adfg = typed_ctxt->get_pre_adfg(pre_adfg_pathname);
+                    std::regex rgx(",");
+                    std::sregex_token_iterator end;
                     std::vector<std::string> sorted_pathnames;
                     if(!pre_adfg.empty()){
                         sorted_pathnames = std::get<3>(pre_adfg.at(pre_adfg_pathname));
                     }
                 
-                     
-                    /** TODO: check adfg to find out the machines!! */
+                /** TODO: check adfg to find out the machines!! */
                 for (const auto& okv: outputs) {
                     std::string prefix = okv.first;
                     while (!prefix.empty() && prefix.back() == PATH_SEPARATOR) prefix.pop_back();
@@ -68,8 +70,26 @@ void DefaultOffCriticalDataPathObserver::operator() (
                             adfg,
                             blob,
                             true);
+                    bool scheduled = false;
+                    node_id_t scheduled_node_id;
+                    if((!prefix.empty()) && (!sorted_pathnames.empty())){
+                        auto itr = std::find(sorted_pathnames.begin(), sorted_pathnames.end(), prefix);
+                        if(itr != sorted_pathnames.end() ){
+                            auto position = std::distance(sorted_pathnames.begin(), itr);
+                            std::sregex_token_iterator iter(adfg.begin(), adfg.end(), rgx, -1);
+                            for(; iter != end && position > 0; iter++){
+                                position --;
+                            }
+                            scheduled = true;
+                            scheduled_node_id = static_cast<uint32_t>(std::stoul(*iter));
+                        }
+                    }
+                    if(scheduled){
+                        typed_ctxt->get_service_client_ref().single_node_trigger_put(obj_to_send, scheduled_node_id);
+                        continue;
+                    }
                     if (okv.second) {
-                        typed_ctxt->get_service_client_ref().put<VolatileCascadeStoreWithStringKey>(obj_to_send, 0, 0);
+                        typed_ctxt->get_service_client_ref().trigger_put(obj_to_send);
                     } else {
                         typed_ctxt->get_service_client_ref().put_and_forget(obj_to_send);
                     }
