@@ -79,6 +79,12 @@ namespace cascade {
  * "user_Defined_logic_list".
  * 7) The "destinations" attribute lists the vertices where the output of UDLs should go. Each element of the 
  * "destinations" value is a dictionary specifying the vertex and the method (put/trigger_put).
+ * 8) The OPTIONAL "required_models_list" lists the required models by the model id
+ * 9) The OPTIONAL "required_models_size_list" lists the estimated memory the model takes in GPU memory for the corresponding 
+ * model in "required_models_list"
+ * 10) The OPTIONAL "output_size_list" lists the estimated output size of the results to send between vertices
+ * 11) The OPTIONAL "expected_execution_timeus_list" lists the estimated GPU runtime for the required_model to execute
+ * 12) The OPTIONAL "required_object_pathnames" lists the required objects(results of previous vertices) for this vertex to run
  *
  * Please note that the lengthes of "destinations", "user_defined_logic_list", and "user_defined_logic_config_list" 
  * should match each other. 
@@ -138,7 +144,7 @@ public:
         // uuid->model_id
         /** TODO: expand this, since each udl may require multiple models!! */
         std::vector<uint32_t> required_models;
-        // uuid->model_size
+        // uuid->model_size in KB
         std::vector<uint32_t> required_models_size;
         // uuid->output_size in KB
         std::unordered_map<std::string, uint32_t> expected_output_size;
