@@ -73,7 +73,7 @@ void DefaultOffCriticalDataPathObserver::operator() (
                     bool scheduled = false;
                     node_id_t scheduled_node_id;
                     if((!prefix.empty()) && (!sorted_pathnames.empty())){
-                        auto itr = std::find(sorted_pathnames.begin(), sorted_pathnames.end(), prefix);
+                        auto itr = std::find(sorted_pathnames.begin(), sorted_pathnames.end(), prefix + PATH_SEPARATOR);
                         if(itr != sorted_pathnames.end() ){
                             auto position = std::distance(sorted_pathnames.begin(), itr);
                             std::sregex_token_iterator iter(adfg.begin(), adfg.end(), rgx, -1);
@@ -85,13 +85,20 @@ void DefaultOffCriticalDataPathObserver::operator() (
                         }
                     }
                     if(scheduled){
-                        typed_ctxt->get_service_client_ref().single_node_trigger_put(obj_to_send, scheduled_node_id);
-                        continue;
-                    }
-                    if (okv.second) {
-                        typed_ctxt->get_service_client_ref().trigger_put(obj_to_send);
-                    } else {
-                        typed_ctxt->get_service_client_ref().put_and_forget(obj_to_send);
+                        dbg_default_trace("~~~~~~ scheduled in emit ~~~~~~~");
+                        // next task is scheduled on the same node, for data locality consideration, then it should execute the next task right after this task
+                        if(typed_ctxt->get_service_client_ref().get_my_id() == scheduled_node_id){
+                            
+                        }else{
+                            typed_ctxt->get_service_client_ref().single_node_trigger_put(obj_to_send, scheduled_node_id);
+                        }
+                    }else{
+                        if (okv.second) {
+                            // temp fix since prefix does not have corresponding object pool in console_printer example
+                            typed_ctxt->get_service_client_ref().put<VolatileCascadeStoreWithStringKey>(obj_to_send, 0, 0);
+                        } else {
+                            typed_ctxt->get_service_client_ref().put_and_forget(obj_to_send);
+                        }
                     }
                 }
             },

@@ -730,6 +730,7 @@ namespace cascade {
         derecho::rpc::QueryResults<void> trigger_put(const typename SubgroupType::ObjectType& object,
                 uint32_t subgroup_index, uint32_t shard_index);
 
+    protected:
         /**
          * "type_recursive_trigger_put" is a helper function for internal use only.
          * @type_index              the index of the subgroup type in the CascadeTypes... list. and the FirstType,
@@ -738,7 +739,6 @@ namespace cascade {
          * @subgroup_index          the subgroup index in the subgroup type designated by type_index
          * @shard_index             the shard index
          */
-    protected:
         template <typename ObjectType, typename FirstType, typename SecondType, typename... RestTypes>
         derecho::rpc::QueryResults<void> type_recursive_trigger_put(
                 uint32_t type_index,
@@ -788,14 +788,14 @@ namespace cascade {
          * @node_id                 the node_id of object to write to
          */
         template <typename ObjectType, typename FirstType, typename SecondType, typename... RestTypes>
-        derecho::rpc::QueryResults<void> type_recursive_single_node_trigger_put(
+        void type_recursive_single_node_trigger_put(
                 uint32_t type_index,
                 const ObjectType& object,
                 uint32_t subgroup_index,
                 node_id_t node_id);
 
         template <typename ObjectType, typename LastType>
-        derecho::rpc::QueryResults<void> type_recursive_single_node_trigger_put(
+        void type_recursive_single_node_trigger_put(
                 uint32_t type_index,
                 const ObjectType& object,
                 uint32_t subgroup_index,
@@ -810,7 +810,7 @@ namespace cascade {
          * @param node_id           node_id that p2p trigger_put to
          */
         template <typename SubgroupType>
-        derecho::rpc::QueryResults<void> single_node_trigger_put(const typename SubgroupType::ObjectType& ObjectWithUInt64Key,
+        void single_node_trigger_put(const typename SubgroupType::ObjectType& ObjectWithUInt64Key,
                 uint32_t subgroup_index,
                 node_id_t node_id);
     public:
@@ -822,7 +822,7 @@ namespace cascade {
          * @param node_id           node_id that p2p trigger_put to
          */
         template <typename ObjectType>
-        derecho::rpc::QueryResults<void> single_node_trigger_put(const ObjectType& ObjectWithUInt64Key, node_id_t node_id);
+        void single_node_trigger_put(const ObjectType& ObjectWithUInt64Key, node_id_t node_id);
 
         /**
          * "remove" deletes an object with the given key.
@@ -1644,6 +1644,7 @@ namespace cascade {
                     >
                 >;
     using match_results_t = std::unordered_map<std::string,prefix_entry_t>;
+/** TODO: change to vector instead of map for small number of elements, which would be faster. Same for set->vector*/
     using pre_adfg_t = 
                 std::unordered_map<
                     std::string, //pathname

@@ -655,27 +655,27 @@ derecho::rpc::QueryResults<void> ServiceClient<CascadeTypes...>::trigger_put(
 
 template <typename... CascadeTypes>
 template <typename ObjectType, typename FirstType, typename SecondType, typename... RestTypes>
-derecho::rpc::QueryResults<void> ServiceClient<CascadeTypes...>::type_recursive_single_node_trigger_put(
+void ServiceClient<CascadeTypes...>::type_recursive_single_node_trigger_put(
         uint32_t type_index,
         const ObjectType& value,
         uint32_t subgroup_index,
         node_id_t node_id) {
     if(type_index == 0) {
-        return single_node_trigger_put<FirstType>(value, subgroup_index, node_id);
+        single_node_trigger_put<FirstType>(value, subgroup_index, node_id);
     } else {
-        return type_recursive_single_node_trigger_put<ObjectType, SecondType, RestTypes...>(type_index - 1, value, subgroup_index, node_id);
+        type_recursive_single_node_trigger_put<ObjectType, SecondType, RestTypes...>(type_index - 1, value, subgroup_index, node_id);
     }
 }
 
 template <typename... CascadeTypes>
 template <typename ObjectType, typename LastType>
-derecho::rpc::QueryResults<void> ServiceClient<CascadeTypes...>::type_recursive_single_node_trigger_put(
+void ServiceClient<CascadeTypes...>::type_recursive_single_node_trigger_put(
         uint32_t type_index,
         const ObjectType& value,
         uint32_t subgroup_index,
         node_id_t node_id) {
-    if(type_index == 0) {
-        return single_node_trigger_put<LastType>(value, subgroup_index, node_id);
+    if(type_index == 0) { 
+        single_node_trigger_put<LastType>(value, subgroup_index, node_id);
     } else {
         throw derecho::derecho_exception(std::string(__PRETTY_FUNCTION__) + ": type index is out of boundary.");
     }
@@ -683,23 +683,31 @@ derecho::rpc::QueryResults<void> ServiceClient<CascadeTypes...>::type_recursive_
 
 template <typename... CascadeTypes>
 template <typename SubgroupType>
-derecho::rpc::QueryResults<void> ServiceClient<CascadeTypes...>::single_node_trigger_put(
+void ServiceClient<CascadeTypes...>::single_node_trigger_put(
         const typename SubgroupType::ObjectType& object,
         uint32_t subgroup_index,
         node_id_t node_id) {
     std::lock_guard<std::mutex> lck(this->group_ptr_mutex);
-    if(group_ptr->template get_my_shard<SubgroupType>(subgroup_index) != -1) {
+    if(group_ptr->template get_my_shard<SubgroupType>(subgroup_index) != -1 ){
         auto& subgroup_handle = group_ptr->template get_subgroup<SubgroupType>(subgroup_index);
-        return subgroup_handle.template p2p_send<RPC_NAME(trigger_put)>(node_id, object);
+        if( node_id != group_ptr->get_my_id()) {
+            
+            subgroup_handle.template p2p_send<RPC_NAME(trigger_put)>(node_id, object);
+        }else{
+            /** If trigger put is used to put the object to the same node by scheduler, then directly call trigger_put function on this server
+             * instead of calling it as an external client. This design is for scheduler performance consideration, but coud be adjust if the other way
+             * is better in preserving the modularity of the program. */
+            subgroup_handle.get_ref().trigger_put(object);
+        }
     } else {
         auto& subgroup_handle = group_ptr->template get_nonmember_subgroup<SubgroupType>(subgroup_index);
-        return subgroup_handle.template p2p_send<RPC_NAME(trigger_put)>(node_id, object);
+        subgroup_handle.template p2p_send<RPC_NAME(trigger_put)>(node_id, object);
     }
 }
 
 template <typename... CascadeTypes>
 template <typename ObjectType>
-derecho::rpc::QueryResults<void> ServiceClient<CascadeTypes...>::single_node_trigger_put(
+void ServiceClient<CascadeTypes...>::single_node_trigger_put(
         const ObjectType& object,
         node_id_t node_id) {
     uint32_t type_index, subgroup_index;
@@ -709,8 +717,8 @@ derecho::rpc::QueryResults<void> ServiceClient<CascadeTypes...>::single_node_tri
     } else {
         std::tie(type_index, subgroup_index, shard_index) = external_group_ptr->get_node_shard_index(node_id);
     }
-    if(shard_index >= 0 ){
-        return this->template type_recursive_single_node_trigger_put<ObjectType, CascadeTypes...>(type_index, object, subgroup_index, node_id);
+    if(shard_index >= 0 ){ 
+        this->template type_recursive_single_node_trigger_put<ObjectType, CascadeTypes...>(type_index, object, subgroup_index, node_id);
     }else{
         throw derecho::derecho_exception(std::string(__PRETTY_FUNCTION__) + ": node_id(" + std::to_string(node_id) + ") does not exist");
     }
@@ -2750,8 +2758,9 @@ std::string CascadeContext<CascadeTypes...>::tide_scheduler(std::string entry_pr
           std::set<node_id_t> preq_workers;
           std::set<std::string>& required_tasks = std::get<0>(dependencies);
           for(auto& preq_task : required_tasks){
+/** TODO: std::tuple<node_id_t,uint64_t>& of allocated_tasks_info.at(preq_task)  */
                preq_workers.emplace(std::get<0>(allocated_tasks_info.at(preq_task)));
-               uint64_t preq_finish_time = std::get<0>(allocated_tasks_info.at(preq_task));
+               uint64_t preq_finish_time = std::get<1>(allocated_tasks_info.at(preq_task));
                uint32_t preq_result_size = std::get<4>(pre_adfg.at(pathname));
                uint64_t preq_arrive_time = preq_finish_time + GPU_to_GPU_delay(preq_result_size);
                prev_EST = std::max(prev_EST, preq_arrive_time);
