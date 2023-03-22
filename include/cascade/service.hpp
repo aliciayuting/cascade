@@ -85,6 +85,27 @@ namespace cascade {
                                  ICascadeContext* ctxt,
                                  uint32_t worker_id,
                                  std::string adfg="") = 0;
+        /**
+         * This function has extra copy overhead of value_ptrs, currently only using it in case of joint prefix in dfg.
+         * TODO: optimize this function to avoid extra copy.
+         * @param sender            The sender id
+         * @param full_key_string   The full key string
+         * @param prefix            The matching prefix length key_string.subtring(0,prefix) returns the prefix.
+         *                          Please note that the trailing '/' is included.
+         * @param version           The version of the key
+         * @param value_ptrs        The vector of value shared pointers
+         * @param ctxt              The CascadeContext
+         * @param worker_id         The off critical data path worker id.
+         */
+        virtual void operator() (const node_id_t sender,
+                                 const std::string& full_key_string,
+                                 const uint32_t prefix_length,
+                                 persistent::version_t version,
+                                 const std::vector<std::shared_ptr<mutils::ByteRepresentable>>& value_ptrs,
+                                 const std::unordered_map<std::string,bool>& outputs,
+                                 ICascadeContext* ctxt,
+                                 uint32_t worker_id,
+                                 std::string adfg=""){}
     };
     /**
      * Action is an command passed from the on critical data path logic (cascade watcher) to the off critical data path
@@ -122,8 +143,10 @@ namespace cascade {
         persistent::version_t           version;
         std::string                     adfg;
         std::shared_ptr<OffCriticalDataPathObserver>   ocdpo_ptr;
-        std::shared_ptr<mutils::ByteRepresentable>     value_ptr;
+        std::vector<std::shared_ptr<mutils::ByteRepresentable>>     value_ptrs;
+        std::vector<std::string>        required_object_pathnames;
         std::unordered_map<std::string,bool>           outputs;
+        bool                            is_trigger;
         /**
          * Move constructor
          * @param other     The input Action object
@@ -135,8 +158,10 @@ namespace cascade {
             version(other.version),
             adfg(other.adfg),
             ocdpo_ptr(std::move(other.ocdpo_ptr)),
-            value_ptr(std::move(other.value_ptr)),
-            outputs(std::move(other.outputs)) {}
+            value_ptrs(std::move(other.value_ptrs)),
+            required_object_pathnames(other.required_object_pathnames),
+            outputs(std::move(other.outputs)),
+            is_trigger(other.is_trigger) {}
         /**
          * Constructor
          * @param   _key_string
@@ -152,15 +177,22 @@ namespace cascade {
                const std::string&           _adfg = "",
                const std::shared_ptr<OffCriticalDataPathObserver>&  _ocdpo_ptr = nullptr,
                const std::shared_ptr<mutils::ByteRepresentable>&    _value_ptr = nullptr,
-               const std::unordered_map<std::string,bool>           _outputs = {}):
+               const std::vector<std::string>&    _required_object_pathnames = {},
+               const std::unordered_map<std::string,bool>           _outputs = {},
+               const bool                   _is_trigger = true):
             sender(_sender),
             key_string(_key_string),
             prefix_length(_prefix_length),
             version(_version),
             adfg(_adfg),
             ocdpo_ptr(_ocdpo_ptr),
-            value_ptr(_value_ptr),
-            outputs(_outputs) {}
+            required_object_pathnames(_required_object_pathnames),
+            outputs(_outputs),
+            is_trigger(_is_trigger) {
+                if(_value_ptr){
+                    value_ptrs.emplace_back(_value_ptr);
+                }
+            }
         Action(const Action&) = delete; // disable copy constructor
         /**
          * Assignment operators
@@ -168,36 +200,48 @@ namespace cascade {
         Action& operator = (Action&&) = default;
         Action& operator = (const Action&) = delete;
         /**
+         *  Add value_ptr
+         *  @param _value_ptr newly received value add to this action
+         *  TODO: check if _value_ptr of this preq has already been added to the value_ptrs
+         */
+        inline void add_value_ptr(const std::shared_ptr<mutils::ByteRepresentable>& _value_ptr) {
+            value_ptrs.emplace_back(_value_ptr);
+        }
+        inline bool received_all_preq_values() const {
+            return value_ptrs.size() == required_object_pathnames.size();
+        }
+        /**
          *  fire the action.
          *  @param ctxt
          *  @param worker_id
          */
         inline void fire(ICascadeContext* ctxt,uint32_t worker_id) {
-            if (value_ptr && ocdpo_ptr) {
+            if (ocdpo_ptr && required_object_pathnames.size() == 1) {
                 dbg_default_trace("In {}: [worker_id={}] action is fired.", __PRETTY_FUNCTION__, worker_id);
                 dbg_default_trace("Fired Action name: {}, adfg: {}.", key_string, adfg);
-                (*ocdpo_ptr)(sender,key_string,prefix_length,version,value_ptr.get(),outputs,ctxt,worker_id, adfg);
+                (*ocdpo_ptr)(sender,key_string,prefix_length,version,value_ptrs.at(0).get(),outputs,ctxt,worker_id, adfg);
+            }else if(ocdpo_ptr){
+                dbg_default_trace("In {}: [worker_id={}] JOINT-vetex action is fired.", __PRETTY_FUNCTION__, worker_id);
+                dbg_default_trace("Fired Action name: {}, adfg: {}.", key_string, adfg);
+                (*ocdpo_ptr)(sender,key_string,prefix_length,version,value_ptrs,outputs,ctxt,worker_id, adfg);
             }
         }
         inline explicit operator bool() const {
-            return (bool)value_ptr;
+            return value_ptrs.size() != 0;
         }
     };
 
     inline std::ostream& operator << (std::ostream& out, const Action& action) {
-        out << "Action:\n"
+        out << "ToBeScheduledAction:\n"
             << "\tsender = " << action.sender << "\n"
             << "\tkey = " << action.key_string << "\n"
             << "\tprefix_length = " << action.prefix_length << "\n"
             << "\tversion = " << std::hex << action.version << "\n"
-            << "\tocdpo_ptr = " << action.ocdpo_ptr.get() << "\n"
-            << "\tvalue_ptr = " << action.value_ptr.get() << "\n"
-            << "\toutput = ";
-        for (auto& output:action.outputs) {
-            out << output.first << (output.second? "[*]":"") << ";";
-        }
+            << "\tocdpo_ptr = " << action.ocdpo_ptr.get() << "\n";
+        for (auto& value_ptr:action.value_ptrs) {
+            out << "\tvalue_ptr = " << value_ptr.get() << "\n";
+        }      
         out << std::endl;
-
         return out;
     }
 
@@ -1640,6 +1684,7 @@ namespace cascade {
 #endif//HAS_STATEFUL_UDL_SUPPORT
                         DataFlowGraph::VertexHook,                    // hook
                         std::shared_ptr<OffCriticalDataPathObserver>, // ocdpo
+                        std::vector<std::string>,                     // required object pathnames
                         std::unordered_map<std::string,bool>          // output map{prefix->bool}
                     >
                 >;
@@ -1649,7 +1694,7 @@ namespace cascade {
                 std::unordered_map<
                     std::string, //pathname
                     std::tuple<
-                        std::set<std::string>,                         // required_objects_pathnames
+                        std::vector<std::string>,                         // required_objects_pathnames
                         std::vector<uint32_t>,                            // required_models
                         std::vector<uint32_t>,                             // required_models_size
                         std::vector<std::string>,                       // sorted_pathnames
@@ -1673,12 +1718,14 @@ namespace cascade {
             inline Action action_buffer_dequeue(std::atomic<bool>& is_running);
             inline void notify_all();
         };
+
         /** action (ring) buffer control */
+        struct action_queue unscheduled_action_queue;
 #ifdef HAS_STATEFUL_UDL_SUPPORT
         std::vector<std::unique_ptr<struct action_queue>> stateful_action_queues_for_multicast;
         std::vector<std::unique_ptr<struct action_queue>> stateful_action_queues_for_p2p;
         struct action_queue single_threaded_action_queue_for_multicast;
-        struct action_queue single_threaded_action_queue_for_p2p;
+        struct action_queue single_threaded_action_queue_for_p2p;  
 #endif//HAS_STATEFUL_UDL_SUPPORT
         struct action_queue stateless_action_queue_for_multicast;
         struct action_queue stateless_action_queue_for_p2p;
@@ -1706,6 +1753,7 @@ namespace cascade {
         std::thread              single_threaded_workhorse_for_multicast;
         std::thread              single_threaded_workhorse_for_p2p;
 #endif//HAS_STATEFUL_UDL_SUPPORT
+        std::thread              scheduler_workhorse;  // scheduler thread
         
         /** Scheduler used information. */
         std::atomic<uint64_t>  local_queue_wait_time;
@@ -1728,6 +1776,12 @@ namespace cascade {
          * @param _1 the task id, started from 0 to (OFF_CRITICAL_DATA_PATH_THREAD_POOL_SIZE-1)
          */
         void workhorse(uint32_t,struct action_queue&);
+
+        /**
+         * scheduler workhorse: run scheduler for unscheduled arrival actions
+         * @param _1 the task id, started from 0 to (OFF_CRITICAL_DATA_PATH_THREAD_POOL_SIZE-1)
+         */
+        void tide_scheduler_workhorse(uint32_t,struct action_queue&);
 
     public:
         /** Resources **/
@@ -1806,6 +1860,7 @@ namespace cascade {
          * @param shard_dispatcher      - the shard dispatcher
          * @param user_defined_logic_id - the UDL id, presumably an UUID string
          * @param ocdpo_ptr             - the data path observer
+         * @param required_object_pathnames - the required object pathnames, from dependency DAG joining node
          * @param outputs               - the outputs are a map from another prefix to put type (true for trigger put,
          *                                false for put).
          */
@@ -1817,6 +1872,7 @@ namespace cascade {
                                        const DataFlowGraph::VertexHook hook,
                                        const std::string& user_defined_logic_id,
                                        const std::shared_ptr<OffCriticalDataPathObserver>& ocdpo_ptr,
+                                       const std::vector<std::string>& required_object_pathnames,
                                        const std::unordered_map<std::string,bool>& outputs);
         /**
          * Unregister a set of prefixes
@@ -1857,6 +1913,17 @@ namespace cascade {
 #endif//HAS_STATEFUL_UDL_SUPPORT
 
         /**
+         *  Enqueue the action to unscheduled_action_queue
+         * TODO: optimize scheduler algorithm by using cached results(no on the spot scheduler computation) 
+         *       and move this to server.hpp critical datapath
+         * @param action        The action
+         *
+         * @return  true for a successful post, false for failure. The current only reason for failure is to post to a
+         *          context already shut down.
+         */
+        bool post_to_scheduler(Action&& action);
+
+        /**
          * Get the stateless action queue length
          *
          * @return current queue_length
@@ -1886,6 +1953,7 @@ namespace cascade {
         /**
          * given a prefix of the first task of the dfg generage the adfg result for this instance
          * @param entry_prefix  entry task pathname
+         * @return adfg encoded to string
         */
         std::string tide_scheduler(std::string entry_prefix);
 

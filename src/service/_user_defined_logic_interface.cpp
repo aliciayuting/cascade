@@ -4,6 +4,8 @@
 namespace derecho {
 namespace cascade {
 
+
+
 void DefaultOffCriticalDataPathObserver::operator() (
         const node_id_t sender,
         const std::string& full_key_string,
@@ -38,7 +40,6 @@ void DefaultOffCriticalDataPathObserver::operator() (
                 uint64_t              message_id,
 #endif
                 const Blob& blob) {
-                    dbg_default_trace("~~~~~~ GREAT HERERERERE  ~~~~~~");
                     std::string pre_adfg_pathname = object_pool_pathname;
                     if(object_pool_pathname.back() != PATH_SEPARATOR) {
                         pre_adfg_pathname = object_pool_pathname + PATH_SEPARATOR;
@@ -68,6 +69,7 @@ void DefaultOffCriticalDataPathObserver::operator() (
                             previous_version_by_key,
                             new_key,
                             adfg,
+                            key,
                             blob,
                             true);
                     bool scheduled = false;
@@ -86,12 +88,9 @@ void DefaultOffCriticalDataPathObserver::operator() (
                     }
                     if(scheduled){
                         dbg_default_trace("~~~~~~ scheduled in emit ~~~~~~~");
-                        // next task is scheduled on the same node, for data locality consideration, then it should execute the next task right after this task
-                        if(typed_ctxt->get_service_client_ref().get_my_id() == scheduled_node_id){
-                            
-                        }else{
-                            typed_ctxt->get_service_client_ref().single_node_trigger_put(obj_to_send, scheduled_node_id);
-                        }
+                        /** TODO: Check if next task is scheduled on the same node, for data locality consideration, 
+                         * then it should execute the next task right after this task. Current implementation could be further optimized */
+                        typed_ctxt->get_service_client_ref().single_node_trigger_put(obj_to_send, scheduled_node_id);
                     }else{
                         if (okv.second) {
                             // temp fix since prefix does not have corresponding object pool in console_printer example

@@ -115,6 +115,12 @@ class CascadeServiceCDPO : public CriticalDataPathObserver<CascadeType> {
             }
             // copy data
             auto value_ptr = std::make_shared<typename CascadeType::ObjectType>(value);
+            // check if this job instance has been scheduled, if post it to unscheduled_queue for scheduler to schedule the whole job instance
+            if(value_ptr->get_adfg().empty()){
+                Action action(sender_id, key, pos + 1, CURRENT_VERSION,"",nullptr, value_ptr, {}, {}, true);
+                ctxt->post_to_scheduler(std::move(action));
+                return;
+            }
             // create actions
             for(auto& per_prefix : handlers) {
                 // per_prefix.first is the matching prefix
@@ -135,11 +141,13 @@ class CascadeServiceCDPO : public CriticalDataPathObserver<CascadeType> {
 #endif
                             value_ptr,
 #ifdef HAS_STATEFUL_UDL_SUPPORT
-                            std::get<4>(handler.second)  // outputs
+                            std::get<4>(handler.second),  // required object pathnames
+                            std::get<5>(handler.second),  // outputs
 #else
-                            std::get<3>(handler.second)  // outputs
+                            std::get<3>(handler.second),  // required object pathnames
+                            std::get<4>(handler.second),  // outputs
 #endif
-                    );
+                    is_trigger);
 
 #ifdef ENABLE_EVALUATION
                     ActionPostExtraInfo apei;

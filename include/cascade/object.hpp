@@ -291,6 +291,7 @@ public:
     std::string                                         key;                     // object_id
     /** TODO: better data structure for adfg, use fixed size array instead*/
     std::string                                         adfg;                    // activation DFG, for event-driven scheduler
+    std::string                                         source_key; // key that generate this object(preq_key)
     Blob                                                blob;                    // the object data
     
 
@@ -323,6 +324,7 @@ public:
                         const persistent::version_t _previous_version_by_key,
                         const std::string& _key,
                         const std::string& _adfg,
+                        const std::string& _source_key,
                         const Blob& _blob,
                         bool  is_emplaced = false);
 
@@ -347,6 +349,7 @@ public:
     // constructor 2 : copy consotructor
     ObjectWithStringKey(const std::string& _key,
                         const std::string& _adfg,
+                        const std::string& _source_key,
                         const uint8_t* const _b,
                         const std::size_t _s);
 
@@ -361,6 +364,7 @@ public:
                         const persistent::version_t _previous_version_by_key,
                         const std::string& _key,
                         const std::string& _adfg,
+                        const std::string& _source_key,
                         const uint8_t* const _b,
                         const std::size_t _s);
 
@@ -405,6 +409,8 @@ public:
     // below function is for event-driven scheduler
     virtual void set_adfg(const std::string& new_adfg);
     virtual const std::string& get_adfg() const;
+    virtual void set_source_key(const std::string& new_source_key);
+    virtual const std::string& get_source_key() const;
 #ifdef ENABLE_EVALUATION
     virtual void set_message_id(uint64_t id) const override;
     virtual uint64_t get_message_id() const override;
@@ -440,6 +446,7 @@ inline std::ostream& operator<<(std::ostream& out, const ObjectWithStringKey& o)
         << ", prev_ver_by_key: " << std::hex << o.previous_version_by_key << std::dec
         << ", id:" << o.key  
         << ", adfg:" << o.adfg
+        << ", source_id:" << o.source_key
         << ", data:" << o.blob << "}";
     return out;
 }

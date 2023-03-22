@@ -165,7 +165,7 @@ public:
         std::unordered_map<std::string,std::unordered_map<std::string,bool>> edges;
         // The reverse map of edges, which denotes the required results from previous verticies to execute this vertex. 
         // include PATH_SEPARATOR at the end
-        std::set<std::string> required_objects_pathnames; 
+        std::vector<std::string> required_objects_pathnames; 
         /** TODO: This assume all the udls in this vertex share the same set of required objects. 
          *        Need more wholistic scheduler design of the vertex graph structure, do we want udls with the same pathname to be executed 
          *        on the same node? Do we want to have vertex to just represent intersect of multiple udls, which may be involved with multiple dfgs?

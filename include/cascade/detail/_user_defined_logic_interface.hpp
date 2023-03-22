@@ -112,6 +112,24 @@ public:
             const emit_func_t&              emit,
             DefaultCascadeContextType*      typed_ctxt,
             uint32_t                        worker_id) = 0;
+    /** 
+     * This function is way less efficient comparing to above one, since it takes a copy of vector of objects
+     * @param sender                The sender id
+     * @param object_pool_pathname  The object pool pathname
+     * @param key_string            The key inside the object pool's domain
+     * @param objects               The immutable object live in the temporary buffer shared by multiple worker threads.
+     * @param emit                  A function to emit the output results.
+     * @param typed_ctxt            The typed context pointer to get access of extra Cascade service
+     * @param worker_id             The off critical data path worker id.
+     */
+    virtual void ocdpo_handler (
+            const node_id_t                 sender,
+            const std::string&              object_pool_pathname,
+            const std::string&              key_string,
+            std::vector<ObjectWithStringKey>      objects,
+            const emit_func_t&              emit,
+            DefaultCascadeContextType*      typed_ctxt,
+            uint32_t                        worker_id) = 0;
 };
 class DefaultOffCriticalDataPathObserver;
 

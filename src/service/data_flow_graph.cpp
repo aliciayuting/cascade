@@ -95,7 +95,7 @@ DataFlowGraph::DataFlowGraph(const json& dfg_conf):
             if(objects_pathname.back() != PATH_SEPARATOR) {
                 objects_pathname = objects_pathname + PATH_SEPARATOR;
             }
-            dfgv.required_objects_pathnames.emplace(objects_pathname);
+            dfgv.required_objects_pathnames.emplace_back(objects_pathname);
         }
         vertices.emplace(dfgv.pathname,dfgv);
     }

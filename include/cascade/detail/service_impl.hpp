@@ -2222,6 +2222,7 @@ void CascadeContext<CascadeTypes...>::construct() {
                         user_defined_logic_manager->get_observer(
                                 edge.first,  // UUID
                                 vertex.second.configurations.at(edge.first)),
+                        vertex.second.required_objects_pathnames,
                         edge.second);
                 expected_runtime = expected_runtime + vertex.second.expected_execution_timeus.at(edge.first);
                 result_size = result_size + vertex.second.expected_output_size.at(edge.first);
@@ -2374,6 +2375,11 @@ void CascadeContext<CascadeTypes...>::construct() {
             });
 
 #endif  // HAS_STATEFUL_UDL_SUPPORT
+    // 2.6 - initialize scheduler worker 
+    scheduler_workhorse = std::thread(
+            [this]() {
+                this->tide_scheduler_workhorse(0xFFFFFFFF, unscheduled_action_queue);
+            });
 }
 
 template <typename... CascadeTypes>
@@ -2383,21 +2389,6 @@ void CascadeContext<CascadeTypes...>::workhorse(uint32_t worker_id, struct actio
     while(is_running) {
         // waiting for an action
         Action action = std::move(aq.action_buffer_dequeue(is_running));
-        // TIDE SCHEDULER: approach 2. Less preferable
-        /** TODO: optimize this*/
-        std::string vertex_pathname = (action.key_string).substr(0, action.prefix_length);
-        if(action.adfg.empty() ){
-            uint64_t before_scheduler_us = std::chrono::duration_cast<std::chrono::microseconds>(
-                              std::chrono::high_resolution_clock::now().time_since_epoch())
-                              .count();
-            action.adfg = this->tide_scheduler(vertex_pathname);   /** TODO: remember to save adfg at emit() */
-            uint64_t after_scheduler_us = std::chrono::duration_cast<std::chrono::microseconds>(
-                              std::chrono::high_resolution_clock::now().time_since_epoch())
-                              .count();
-            dbg_default_trace("~~~ vertex_pathname: {}, scheduled adfg: {}, time[{}]us", vertex_pathname, action.adfg, after_scheduler_us - before_scheduler_us);
-        }
-        // if action_buffer_dequeue return with is_running == false, value_ptr is invalid(nullptr).
-        action.fire(this, worker_id);
         /** TODO: use expected run_time instead of 1. */
         this->local_queue_wait_time --;
         this->get_service_client_ref().send_local_queue_wait_time(this->local_queue_wait_time);
@@ -2407,6 +2398,107 @@ void CascadeContext<CascadeTypes...>::workhorse(uint32_t worker_id, struct actio
                 if(!action) break;  // end of queue
                 action.fire(this, worker_id);
             } while(true);
+        }
+    }
+    dbg_default_trace("Cascade context workhorse[{}] finished normally.", static_cast<uint64_t>(gettid()));
+}
+
+template <typename... CascadeTypes>
+void CascadeContext<CascadeTypes...>::tide_scheduler_workhorse(uint32_t worker_id, struct action_queue& aq) {
+    pthread_setname_np(pthread_self(), ("cs_ctxt_t" + std::to_string(worker_id)).c_str());
+    dbg_default_trace("Cascade context tide_scheduler_workhorse[{}] started", worker_id);
+    while(is_running) {
+        // waiting for an action
+        Action action = std::move(aq.action_buffer_dequeue(is_running));
+        std::string vertex_pathname = (action.key_string).substr(0, action.prefix_length);
+        uint64_t before_scheduler_us = std::chrono::duration_cast<std::chrono::microseconds>(
+                            std::chrono::high_resolution_clock::now().time_since_epoch())
+                            .count();
+        action.adfg = this->tide_scheduler(vertex_pathname);   // Note: remember to save adfg to objectWithStringKey at emit() 
+        uint64_t after_scheduler_us = std::chrono::duration_cast<std::chrono::microseconds>(
+                            std::chrono::high_resolution_clock::now().time_since_epoch())
+                            .count();
+        dbg_default_trace("~~~ vertex_pathname: {}, scheduled adfg: {}, time[{}]us", vertex_pathname, action.adfg, after_scheduler_us - before_scheduler_us);  
+        size_t pos = action.adfg.find(",");
+        node_id_t first_task_assigned_node_id;
+        if(pos != std::string::npos){
+            first_task_assigned_node_id = std::stoi(action.adfg.substr(0, pos));
+        }else if(!action.adfg.empty()){
+            first_task_assigned_node_id = std::stoi(action.adfg);
+        }else{
+            dbg_default_error("adfg is empty");
+            return;
+        }
+        if(action.value_ptrs.size() == 1){
+            auto value_ptr = reinterpret_cast<ObjectWithStringKey*>(action.value_ptrs.at(0).get());
+            value_ptr->set_adfg(action.adfg);
+            if(first_task_assigned_node_id != this->get_service_client_ref().get_my_id()){
+                this->get_service_client_ref().single_node_trigger_put((*value_ptr), first_task_assigned_node_id);
+            }else{
+                auto prefix = action.key_string.substr(0, action.prefix_length);
+                auto handlers = this->get_prefix_handlers(prefix);
+                /** TODO: 
+                  * This implementation duplicate later half of CascadeServiceCDPO operator() logic. Need better organization here.
+                  * here assuming the starting action does not contain normal put (put/put_and_forget) */
+                // create actions
+                for(auto& per_prefix : handlers) {
+                    // per_prefix.first is the matching prefix
+                    // per_prefix.second is a set of handlers
+                    for(const auto& handler : per_prefix.second) {
+                    // handler.first is handler uuid
+                    // handler.second is a 4,5-tuple of shard dispatcher,stateful,hook,ocdpo,and outputs;
+                        Action new_action(
+                                action.sender,
+                                action.key_string,
+                                per_prefix.first.size(),
+                                value_ptr->get_version(),
+                                value_ptr->get_adfg(),
+#ifdef HAS_STATEFUL_UDL_SUPPORT
+                                std::get<3>(handler.second),  // ocdpo
+#else
+                                std::get<2>(handler.second),  // ocdpo
+#endif
+                                action.value_ptrs.at(0),
+#ifdef HAS_STATEFUL_UDL_SUPPORT
+                                std::get<4>(handler.second),  // required object pathnames
+                                std::get<5>(handler.second),  // outputs
+#else
+                                std::get<3>(handler.second),  // required object pathnames
+                                std::get<4>(handler.second),  // outputs
+#endif
+                    true);
+
+#ifdef ENABLE_EVALUATION
+                        ActionPostExtraInfo apei;
+                        apei.uint64_val = 0;
+                        apei.info.is_trigger = action.is_trigger;
+#endif
+
+#ifdef HAS_STATEFUL_UDL_SUPPORT
+#ifdef ENABLE_EVALUATION
+                        apei.info.stateful = std::get<1>(handler.second);
+#endif
+#endif
+                        TimestampLogger::log(TLT_ACTION_POST_START,
+                                            this->get_service_client_ref().get_my_id(),
+                                            dynamic_cast<const IHasMessageID*>(value_ptr)->get_message_id(),
+                                            get_time_ns(),
+                                            apei.uint64_val);
+#ifdef HAS_STATEFUL_UDL_SUPPORT
+                        this->post(std::move(new_action), std::get<1>(handler.second), action.is_trigger);
+#else
+                        this->post(std::move(new_action), action.is_trigger);
+#endif//HAS_STATEFUL_UDL_SUPPORT
+                        TimestampLogger::log(TLT_ACTION_POST_END,
+                                            this->get_service_client_ref().get_my_id(),
+                                            dynamic_cast<const IHasMessageID*>(value_ptr)->get_message_id(),
+                                            get_time_ns(),
+                                            apei.uint64_val);
+                    }
+                }
+            }
+        }else{
+            dbg_default_error("unscheduled_object value not equals 1");
         }
     }
     dbg_default_trace("Cascade context workhorse[{}] finished normally.", static_cast<uint64_t>(gettid()));
@@ -2447,7 +2539,12 @@ Action CascadeContext<CascadeTypes...>::action_queue::action_buffer_dequeue(std:
     }
 
     Action ret;
-    if(!ACTION_BUFFER_IS_EMPTY) {
+    // bool found_action = false;
+    /**
+     * TODO: optimize this!
+     * Allow the following actions able to execute if head is not ready
+    */
+    if(!ACTION_BUFFER_IS_EMPTY && ACTION_BUFFER_HEAD.received_all_preq_values()) {
         ret = std::move(ACTION_BUFFER_HEAD);
         ACTION_BUFFER_DEQUEUE;
         action_buffer_slot_cv.notify_one();
@@ -2507,6 +2604,9 @@ void CascadeContext<CascadeTypes...>::destroy() {
         single_threaded_workhorse_for_p2p.join();
     }
 #endif  // HAS_STATEFUL_UDL_SUPPORT
+    if(scheduler_workhorse.joinable()) {
+        scheduler_workhorse.join();
+    }
     dbg_default_trace("Cascade context@{:p} is destroyed.", static_cast<void*>(this));
 }
 
@@ -2525,14 +2625,15 @@ void CascadeContext<CascadeTypes...>::register_prefixes(
         const DataFlowGraph::VertexHook hook,
         const std::string& user_defined_logic_id,
         const std::shared_ptr<OffCriticalDataPathObserver>& ocdpo_ptr,
+        const std::vector<std::string>& required_object_pathnames,
         const std::unordered_map<std::string, bool>& outputs) {
     for(const auto& prefix : prefixes) {
         prefix_registry_ptr->atomically_modify(
                 prefix,
 #ifdef HAS_STATEFUL_UDL_SUPPORT
-                [&prefix, &shard_dispatcher, &stateful, &hook, &user_defined_logic_id, &ocdpo_ptr, &outputs](const std::shared_ptr<prefix_entry_t>& entry) {
+                [&prefix, &shard_dispatcher, &stateful, &hook, &user_defined_logic_id, &ocdpo_ptr, &required_object_pathnames, &outputs](const std::shared_ptr<prefix_entry_t>& entry) {
 #else
-                [&prefix, &shard_dispatcher, &hook, &user_defined_logic_id, &ocdpo_ptr, &outputs](const std::shared_ptr<prefix_entry_t>& entry) {
+                [&prefix, &shard_dispatcher, &hook, &user_defined_logic_id, &ocdpo_ptr, &required_object_pathnames, &outputs](const std::shared_ptr<prefix_entry_t>& entry) {
 #endif
                     std::shared_ptr<prefix_entry_t> new_entry;
                     if(entry) {
@@ -2542,15 +2643,15 @@ void CascadeContext<CascadeTypes...>::register_prefixes(
                     }
                     if(new_entry->find(user_defined_logic_id) == new_entry->end()) {
 #ifdef HAS_STATEFUL_UDL_SUPPORT
-                        new_entry->emplace(user_defined_logic_id, std::tuple{shard_dispatcher, stateful, hook, ocdpo_ptr, outputs});
+                        new_entry->emplace(user_defined_logic_id, std::tuple{shard_dispatcher, stateful, hook, ocdpo_ptr, required_object_pathnames, outputs});
 #else
-                        new_entry->emplace(user_defined_logic_id, std::tuple{shard_dispatcher, hook, ocdpo_ptr, outputs});
+                        new_entry->emplace(user_defined_logic_id, std::tuple{shard_dispatcher, hook, ocdpo_ptr, required_object_pathnames, outputs});
 #endif
                     } else {
 #ifdef HAS_STATEFUL_UDL_SUPPORT
-                        std::get<4>(new_entry->at(user_defined_logic_id)).insert(outputs.cbegin(), outputs.cend());
+                        std::get<5>(new_entry->at(user_defined_logic_id)).insert(outputs.cbegin(), outputs.cend());
 #else
-                        std::get<3>(new_entry->at(user_defined_logic_id)).insert(outputs.cbegin(), outputs.cend());
+                        std::get<4>(new_entry->at(user_defined_logic_id)).insert(outputs.cbegin(), outputs.cend());
 #endif
                     }
                     return new_entry;
@@ -2670,6 +2771,12 @@ bool CascadeContext<CascadeTypes...>::post(Action&& action, bool is_trigger) {
 }
 
 template <typename... CascadeTypes>
+bool CascadeContext<CascadeTypes...>::post_to_scheduler(Action&& action) {
+    unscheduled_action_queue.action_buffer_enqueue(std::move(action));
+    return true;
+}
+
+template <typename... CascadeTypes>
 size_t CascadeContext<CascadeTypes...>::stateless_action_queue_length_p2p() {
     return (stateless_action_queue_for_p2p.action_buffer_tail - stateless_action_queue_for_multicast.action_buffer_head + ACTION_BUFFER_SIZE) % ACTION_BUFFER_SIZE;
 }
@@ -2756,7 +2863,7 @@ std::string CascadeContext<CascadeTypes...>::tide_scheduler(std::string entry_pr
           uint64_t prev_EST = cur_us;
           // the worker_ids where pre-requisit tasks are executed
           std::set<node_id_t> preq_workers;
-          std::set<std::string>& required_tasks = std::get<0>(dependencies);
+          std::vector<std::string>& required_tasks = std::get<0>(dependencies);
           for(auto& preq_task : required_tasks){
 /** TODO: std::tuple<node_id_t,uint64_t>& of allocated_tasks_info.at(preq_task)  */
                preq_workers.emplace(std::get<0>(allocated_tasks_info.at(preq_task)));
