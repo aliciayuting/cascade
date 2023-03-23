@@ -671,6 +671,8 @@ ObjectWithStringKey::ObjectWithStringKey(const std::string& _key,
     previous_version(INVALID_VERSION),
     previous_version_by_key(INVALID_VERSION),
     key(_key),
+    adfg(),
+    source_key(),
     blob(_blob) {}
 // constructor 0.5 : copy/in-place constructor
 ObjectWithStringKey::ObjectWithStringKey(
@@ -692,6 +694,8 @@ ObjectWithStringKey::ObjectWithStringKey(
     previous_version(_previous_version),
     previous_version_by_key(_previous_version_by_key),
     key(_key), 
+    adfg(),
+    source_key(),
     blob(_blob.bytes,_blob.size,emplaced) {}
 
 ObjectWithStringKey::ObjectWithStringKey(
@@ -731,6 +735,8 @@ ObjectWithStringKey::ObjectWithStringKey(const std::string& _key,
     previous_version(INVALID_VERSION),
     previous_version_by_key(INVALID_VERSION),
     key(_key),
+    adfg(),
+    source_key(),
     blob(_b, _s) {}
 // constructor 1.5 : copy constructor
 ObjectWithStringKey::ObjectWithStringKey(
@@ -752,6 +758,8 @@ ObjectWithStringKey::ObjectWithStringKey(
     previous_version(_previous_version),
     previous_version_by_key(_previous_version_by_key),
     key(_key), 
+    adfg(),
+    source_key(),
     blob(_b, _s) {}
 
 // constructor 2 : copy consotructor with adfg
@@ -875,6 +883,8 @@ ObjectWithStringKey::ObjectWithStringKey(
     previous_version(_previous_version),
     previous_version_by_key(_previous_version_by_key),
     key(_key),
+    adfg(),
+    source_key(),
     blob(_message_generator, _s) {}
 
 const std::string& ObjectWithStringKey::get_key_ref() const {
@@ -973,6 +983,7 @@ std::size_t ObjectWithStringKey::to_bytes(uint8_t* v) const {
     pos+=mutils::to_bytes(previous_version_by_key, v + pos);
     pos+=mutils::to_bytes(key, v + pos);
     pos+=mutils::to_bytes(adfg, v + pos);
+    pos+=mutils::to_bytes(source_key, v + pos);
     pos+=mutils::to_bytes(blob, v + pos);
     return pos;
 }
@@ -988,6 +999,7 @@ std::size_t ObjectWithStringKey::bytes_size() const {
            mutils::bytes_size(previous_version_by_key) +
            mutils::bytes_size(key) +
            mutils::bytes_size(adfg) + 
+           mutils::bytes_size(source_key) +
            mutils::bytes_size(blob);
 }
 
