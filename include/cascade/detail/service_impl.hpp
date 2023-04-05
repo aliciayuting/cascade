@@ -688,10 +688,12 @@ void ServiceClient<CascadeTypes...>::single_node_trigger_put(
         uint32_t subgroup_index,
         node_id_t node_id) {
     std::lock_guard<std::mutex> lck(this->group_ptr_mutex);
+    auto temp =group_ptr->template get_my_shard<SubgroupType>(subgroup_index);
+    auto my_id = group_ptr->get_my_id();
+    std::vector<uint32_t> indexes = group_ptr->template get_my_subgroup_indexes<SubgroupType>();
     if(group_ptr->template get_my_shard<SubgroupType>(subgroup_index) != -1 ){
         auto& subgroup_handle = group_ptr->template get_subgroup<SubgroupType>(subgroup_index);
         if( node_id != group_ptr->get_my_id()) {
-            
             subgroup_handle.template p2p_send<RPC_NAME(trigger_put)>(node_id, object);
         }else{
             /** If trigger put is used to put the object to the same node by scheduler, then directly call trigger_put function on this server
@@ -700,6 +702,9 @@ void ServiceClient<CascadeTypes...>::single_node_trigger_put(
             subgroup_handle.get_ref().trigger_put(object);
         }
     } else {
+        if( node_id == group_ptr->get_my_id()) {
+            dbg_default_trace("!!!OH NOOO! not the same subgroup but same node_id!!!!");
+        }
         auto& subgroup_handle = group_ptr->template get_nonmember_subgroup<SubgroupType>(subgroup_index);
         subgroup_handle.template p2p_send<RPC_NAME(trigger_put)>(node_id, object);
     }
@@ -708,7 +713,7 @@ void ServiceClient<CascadeTypes...>::single_node_trigger_put(
 template <typename... CascadeTypes>
 template <typename ObjectType>
 void ServiceClient<CascadeTypes...>::single_node_trigger_put(
-        const ObjectType& object,
+        const ObjectType object,
         node_id_t node_id) {
     uint32_t type_index, subgroup_index;
     int32_t shard_index;
@@ -2392,6 +2397,7 @@ void CascadeContext<CascadeTypes...>::workhorse(uint32_t worker_id, struct actio
         /** TODO: use expected run_time instead of 1. */
         this->local_queue_wait_time --;
         this->get_service_client_ref().send_local_queue_wait_time(this->local_queue_wait_time);
+        action.fire(this,worker_id);
         if(!is_running) {
             do {
                 action = std::move(aq.action_buffer_dequeue(is_running));
@@ -2403,6 +2409,7 @@ void CascadeContext<CascadeTypes...>::workhorse(uint32_t worker_id, struct actio
     dbg_default_trace("Cascade context workhorse[{}] finished normally.", static_cast<uint64_t>(gettid()));
 }
 
+
 template <typename... CascadeTypes>
 void CascadeContext<CascadeTypes...>::tide_scheduler_workhorse(uint32_t worker_id, struct action_queue& aq) {
     pthread_setname_np(pthread_self(), ("cs_ctxt_t" + std::to_string(worker_id)).c_str());
@@ -2410,99 +2417,49 @@ void CascadeContext<CascadeTypes...>::tide_scheduler_workhorse(uint32_t worker_i
     while(is_running) {
         // waiting for an action
         Action action = std::move(aq.action_buffer_dequeue(is_running));
-        std::string vertex_pathname = (action.key_string).substr(0, action.prefix_length);
-        uint64_t before_scheduler_us = std::chrono::duration_cast<std::chrono::microseconds>(
-                            std::chrono::high_resolution_clock::now().time_since_epoch())
-                            .count();
-        action.adfg = this->tide_scheduler(vertex_pathname);   // Note: remember to save adfg to objectWithStringKey at emit() 
-        uint64_t after_scheduler_us = std::chrono::duration_cast<std::chrono::microseconds>(
-                            std::chrono::high_resolution_clock::now().time_since_epoch())
-                            .count();
-        dbg_default_trace("~~~ vertex_pathname: {}, scheduled adfg: {}, time[{}]us", vertex_pathname, action.adfg, after_scheduler_us - before_scheduler_us);  
-        size_t pos = action.adfg.find(",");
-        node_id_t first_task_assigned_node_id;
-        if(pos != std::string::npos){
-            first_task_assigned_node_id = std::stoi(action.adfg.substr(0, pos));
-        }else if(!action.adfg.empty()){
-            first_task_assigned_node_id = std::stoi(action.adfg);
-        }else{
-            dbg_default_error("adfg is empty");
-            return;
-        }
-        if(action.value_ptrs.size() == 1){
-            auto value_ptr = reinterpret_cast<ObjectWithStringKey*>(action.value_ptrs.at(0).get());
-            value_ptr->set_adfg(action.adfg);
-            if(first_task_assigned_node_id != this->get_service_client_ref().get_my_id()){
-                this->get_service_client_ref().single_node_trigger_put((*value_ptr), first_task_assigned_node_id);
-            }else{
-                auto prefix = action.key_string.substr(0, action.prefix_length);
-                auto handlers = this->get_prefix_handlers(prefix);
-                /** TODO: 
-                  * This implementation duplicate later half of CascadeServiceCDPO operator() logic. Need better organization here.
-                  * here assuming the starting action does not contain normal put (put/put_and_forget) */
-                // create actions
-                for(auto& per_prefix : handlers) {
-                    // per_prefix.first is the matching prefix
-                    // per_prefix.second is a set of handlers
-                    for(const auto& handler : per_prefix.second) {
-                    // handler.first is handler uuid
-                    // handler.second is a 4,5-tuple of shard dispatcher,stateful,hook,ocdpo,and outputs;
-                        Action new_action(
-                                action.sender,
-                                action.key_string,
-                                per_prefix.first.size(),
-                                value_ptr->get_version(),
-                                value_ptr->get_adfg(),
-#ifdef HAS_STATEFUL_UDL_SUPPORT
-                                std::get<3>(handler.second),  // ocdpo
-#else
-                                std::get<2>(handler.second),  // ocdpo
-#endif
-                                action.value_ptrs.at(0),
-#ifdef HAS_STATEFUL_UDL_SUPPORT
-                                std::get<4>(handler.second),  // required object pathnames
-                                std::get<5>(handler.second),  // outputs
-#else
-                                std::get<3>(handler.second),  // required object pathnames
-                                std::get<4>(handler.second),  // outputs
-#endif
-                    true);
-
-#ifdef ENABLE_EVALUATION
-                        ActionPostExtraInfo apei;
-                        apei.uint64_val = 0;
-                        apei.info.is_trigger = action.is_trigger;
-#endif
-
-#ifdef HAS_STATEFUL_UDL_SUPPORT
-#ifdef ENABLE_EVALUATION
-                        apei.info.stateful = std::get<1>(handler.second);
-#endif
-#endif
-                        TimestampLogger::log(TLT_ACTION_POST_START,
-                                            this->get_service_client_ref().get_my_id(),
-                                            dynamic_cast<const IHasMessageID*>(value_ptr)->get_message_id(),
-                                            get_time_ns(),
-                                            apei.uint64_val);
-#ifdef HAS_STATEFUL_UDL_SUPPORT
-                        this->post(std::move(new_action), std::get<1>(handler.second), action.is_trigger);
-#else
-                        this->post(std::move(new_action), action.is_trigger);
-#endif//HAS_STATEFUL_UDL_SUPPORT
-                        TimestampLogger::log(TLT_ACTION_POST_END,
-                                            this->get_service_client_ref().get_my_id(),
-                                            dynamic_cast<const IHasMessageID*>(value_ptr)->get_message_id(),
-                                            get_time_ns(),
-                                            apei.uint64_val);
-                    }
-                }
-            }
-        }else{
-            dbg_default_error("unscheduled_object value not equals 1");
+        this->fire_scheduler(std::move(action), worker_id);
+        if(!is_running) {
+            do {
+                action = std::move(aq.action_buffer_dequeue(is_running));
+                if(!action) break;  
+                this->fire_scheduler(std::move(action), worker_id);
+            } while(true);
         }
     }
     dbg_default_trace("Cascade context workhorse[{}] finished normally.", static_cast<uint64_t>(gettid()));
 }
+
+/** Fire scheduler operation */
+template <typename... CascadeTypes>
+void CascadeContext<CascadeTypes...>::fire_scheduler(Action&& action,uint32_t worker_id) {
+    dbg_default_trace("-- -- -- -- -- fire_scheduler[{}] for action key: [{}]", worker_id, action.key_string);
+    std::string vertex_pathname = (action.key_string).substr(0, action.prefix_length);
+    uint64_t before_scheduler_us = get_time_us(true);
+    action.adfg = this->tide_scheduler(vertex_pathname);   // Note: remember to save adfg to objectWithStringKey at emit() 
+    uint64_t after_scheduler_us = get_time_us(true);
+    dbg_default_trace("~~~ vertex_pathname: {}, scheduled adfg: {}, time[{}]us", vertex_pathname, action.adfg, after_scheduler_us - before_scheduler_us);  
+    if(!action.adfg.empty()){
+        ObjectWithStringKey* obj_ptr = reinterpret_cast<ObjectWithStringKey*>(action.value_ptrs.at(0).get());
+        obj_ptr->adfg = action.adfg;
+        size_t pos = action.adfg.find(",");
+        if(pos == std::string::npos){
+            pos = action.adfg.length();
+        }
+        node_id_t first_task_assigned_node_id = std::stoi(action.adfg.substr(0, pos));
+        if(first_task_assigned_node_id == this->get_service_client_ref().get_my_id()){
+            DataFlowGraph::Statefulness statefulness = action.stateful;
+            bool is_trigger = action.is_trigger;
+            this->post(std::move(action),statefulness,is_trigger);
+        }else{
+            this->get_service_client_ref().single_node_trigger_put((*obj_ptr), first_task_assigned_node_id);
+        }
+    }else{
+        dbg_default_error("adfg is empty");
+        return;
+    }
+    dbg_default_trace("Scheduler action finished normally.");
+}
+
 
 template <typename... CascadeTypes>
 void CascadeContext<CascadeTypes...>::action_queue::initialize() {
@@ -2544,7 +2501,7 @@ Action CascadeContext<CascadeTypes...>::action_queue::action_buffer_dequeue(std:
      * TODO: optimize this!
      * Allow the following actions able to execute if head is not ready
     */
-    if(!ACTION_BUFFER_IS_EMPTY && ACTION_BUFFER_HEAD.received_all_preq_values()) {
+    if(!ACTION_BUFFER_IS_EMPTY && (ACTION_BUFFER_HEAD.received_all_preq_values() )) {
         ret = std::move(ACTION_BUFFER_HEAD);
         ACTION_BUFFER_DEQUEUE;
         action_buffer_slot_cv.notify_one();
@@ -2788,9 +2745,7 @@ size_t CascadeContext<CascadeTypes...>::stateless_action_queue_length_multicast(
 
 template <typename... CascadeTypes>
 uint64_t CascadeContext<CascadeTypes...>::check_queue_wait_time(node_id_t node_id) {
-    uint64_t cur_us = std::chrono::duration_cast<std::chrono::microseconds>(
-                              std::chrono::high_resolution_clock::now().time_since_epoch())
-                              .count();
+    uint64_t cur_us = get_time_us(true);
     /** TODO: move this threshold to config, currently set it to every 1sec*/
     if(cur_us - last_group_queue_wait_times_update_timeus > 1000000) {
         last_group_queue_wait_times_update_timeus = cur_us;
@@ -2809,9 +2764,7 @@ uint64_t CascadeContext<CascadeTypes...>::check_queue_wait_time(node_id_t node_i
 
 template <typename... CascadeTypes>
 bool CascadeContext<CascadeTypes...>::check_if_model_in_gpu(node_id_t node_id, uint32_t model_id) {
-    uint64_t cur_us = std::chrono::duration_cast<std::chrono::microseconds>(
-                              std::chrono::high_resolution_clock::now().time_since_epoch())
-                              .count();
+    uint64_t cur_us = get_time_us(true);
     /** TODO: move this threshold to config, currently set it to every 10sec*/
     if(cur_us - last_group_gpu_models_update_timeus > 10000000) {
         last_group_gpu_models_update_timeus = cur_us;
@@ -2852,9 +2805,7 @@ std::string CascadeContext<CascadeTypes...>::tide_scheduler(std::string entry_pr
      std::unordered_map<std::string, std::tuple<node_id_t,uint64_t>> allocated_tasks_info;
      std::vector<node_id_t> workers_set = this->get_service_client_ref().get_members();
      pre_adfg_t pre_adfg = this->get_pre_adfg(entry_prefix);
-     uint64_t cur_us = std::chrono::duration_cast<std::chrono::microseconds>(
-                              std::chrono::high_resolution_clock::now().time_since_epoch())
-                              .count();
+     uint64_t cur_us = get_time_us(true);
      /** TODO: optimize this get_sorted_pathnames step by better design of where to store sorted_pathnames in pre_adfg_t */
      std::vector<std::string>& sorted_pathnames = std::get<3>(pre_adfg.at(entry_prefix));
      for(auto& pathname: sorted_pathnames){

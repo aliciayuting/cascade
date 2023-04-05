@@ -146,6 +146,7 @@ namespace cascade {
         std::vector<std::shared_ptr<mutils::ByteRepresentable>>     value_ptrs;
         std::vector<std::string>        required_object_pathnames;
         std::unordered_map<std::string,bool>           outputs;
+        DataFlowGraph::Statefulness     stateful;
         bool                            is_trigger;
         /**
          * Move constructor
@@ -161,6 +162,7 @@ namespace cascade {
             value_ptrs(std::move(other.value_ptrs)),
             required_object_pathnames(other.required_object_pathnames),
             outputs(std::move(other.outputs)),
+            stateful(other.stateful),
             is_trigger(other.is_trigger) {}
         /**
          * Constructor
@@ -169,6 +171,10 @@ namespace cascade {
          * @param   _adfg
          * @param   _ocdpo_ptr const reference rvalue
          * @param   _value_ptr
+         * @param   _required_object_pathnames
+         * @param   _outputs
+         * @param   _stateful
+         * @param   _is_trigger
          */
         Action(const node_id_t              _sender = INVALID_NODE_ID,
                const std::string&           _key_string = "",
@@ -179,6 +185,7 @@ namespace cascade {
                const std::shared_ptr<mutils::ByteRepresentable>&    _value_ptr = nullptr,
                const std::vector<std::string>&    _required_object_pathnames = {},
                const std::unordered_map<std::string,bool>           _outputs = {},
+               const DataFlowGraph::Statefulness _stateful = DataFlowGraph::Statefulness::STATELESS,
                const bool                   _is_trigger = true):
             sender(_sender),
             key_string(_key_string),
@@ -188,6 +195,7 @@ namespace cascade {
             ocdpo_ptr(_ocdpo_ptr),
             required_object_pathnames(_required_object_pathnames),
             outputs(_outputs),
+            stateful(_stateful),
             is_trigger(_is_trigger) {
                 if(_value_ptr){
                     value_ptrs.emplace_back(_value_ptr);
@@ -208,7 +216,7 @@ namespace cascade {
             value_ptrs.emplace_back(_value_ptr);
         }
         inline bool received_all_preq_values() const {
-            return value_ptrs.size() == required_object_pathnames.size();
+            return (value_ptrs.size() >= required_object_pathnames.size() || adfg.empty());
         }
         /**
          *  fire the action.
@@ -216,7 +224,7 @@ namespace cascade {
          *  @param worker_id
          */
         inline void fire(ICascadeContext* ctxt,uint32_t worker_id) {
-            if (ocdpo_ptr && required_object_pathnames.size() == 1) {
+            if (ocdpo_ptr && required_object_pathnames.size() < 1) {
                 dbg_default_trace("In {}: [worker_id={}] action is fired.", __PRETTY_FUNCTION__, worker_id);
                 dbg_default_trace("Fired Action name: {}, adfg: {}.", key_string, adfg);
                 (*ocdpo_ptr)(sender,key_string,prefix_length,version,value_ptrs.at(0).get(),outputs,ctxt,worker_id, adfg);
@@ -854,7 +862,7 @@ namespace cascade {
          * @param node_id           node_id that p2p trigger_put to
          */
         template <typename SubgroupType>
-        void single_node_trigger_put(const typename SubgroupType::ObjectType& ObjectWithUInt64Key,
+        void single_node_trigger_put(const typename SubgroupType::ObjectType& object,
                 uint32_t subgroup_index,
                 node_id_t node_id);
     public:
@@ -866,7 +874,7 @@ namespace cascade {
          * @param node_id           node_id that p2p trigger_put to
          */
         template <typename ObjectType>
-        void single_node_trigger_put(const ObjectType& ObjectWithUInt64Key, node_id_t node_id);
+        void single_node_trigger_put(const ObjectType object, node_id_t node_id);
 
         /**
          * "remove" deletes an object with the given key.
@@ -1782,6 +1790,14 @@ namespace cascade {
          * @param _1 the task id, started from 0 to (OFF_CRITICAL_DATA_PATH_THREAD_POOL_SIZE-1)
          */
         void tide_scheduler_workhorse(uint32_t,struct action_queue&);
+
+    private:
+        /**
+         * run scheduler on an unscheduled action, entry task
+         * @param action the entry task(represented by action) to be scheduled
+         * @param worker_id the worker id
+        */
+        void fire_scheduler(Action&& action,uint32_t worker_id);
 
     public:
         /** Resources **/
