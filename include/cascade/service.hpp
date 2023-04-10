@@ -546,6 +546,19 @@ namespace cascade {
         void refresh_member_cache_entry(uint32_t subgroup_index, uint32_t shard_index);
 
         /**
+         * Helper function to fill entire member_cache, initialized upon server start. 
+         * Used by single_node_trigger_put by scheduler
+        */
+        template <typename FirstType, typename SecondType, typename... RestTypes>
+        void type_recursive_refresh_member_cache();
+
+        /**
+         * type_recursive_refresh_member_cache() base case
+        */
+        template <typename LastType>
+        void type_recursive_refresh_member_cache();
+
+        /**
          * Deprecated: Please use key_to_shard() instead
          *
          * Metadata API Helper: turn a string key to subgroup index and shard index
@@ -561,6 +574,14 @@ namespace cascade {
         template <typename KeyType>
         std::tuple<uint32_t,uint32_t,uint32_t> key_to_shard(
                 const KeyType& key, bool check_object_location = true);
+
+        /**
+         *
+         * Scheduler helper: turn a node id to subgroup type index, subgroup index, and shard index.
+         */
+        std::tuple<std::type_index,uint32_t> node_id_to_subgroup(
+                node_id_t node_id);
+        
 
     public:
         /**
@@ -841,17 +862,19 @@ namespace cascade {
          */
         template <typename ObjectType, typename FirstType, typename SecondType, typename... RestTypes>
         void type_recursive_single_node_trigger_put(
-                uint32_t type_index,
+                std::type_index type_index,
                 const ObjectType& object,
                 uint32_t subgroup_index,
-                node_id_t node_id);
+                node_id_t node_id,
+                uint32_t round);
 
         template <typename ObjectType, typename LastType>
         void type_recursive_single_node_trigger_put(
-                uint32_t type_index,
+                std::type_index type_index,
                 const ObjectType& object,
                 uint32_t subgroup_index,
-                node_id_t node_id);
+                node_id_t node_id,
+                uint32_t round);
         /**
          * "single_node_trigger_put" writes an object to a specific node. Only for internal use by scheduler.
          *  

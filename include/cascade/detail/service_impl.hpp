@@ -376,6 +376,31 @@ void ServiceClient<CascadeTypes...>::refresh_member_cache_entry(uint32_t subgrou
 }
 
 template <typename... CascadeTypes>
+template <typename FirstType, typename SecondType, typename... RestTypes>
+void ServiceClient<CascadeTypes...>::type_recursive_refresh_member_cache() {
+    auto num_subgroups =  get_number_of_subgroups<FirstType>();
+    for(uint32_t subgroup_index = 0; subgroup_index < num_subgroups; ++subgroup_index) {
+        auto num_shards = get_number_of_shards<FirstType>(subgroup_index);
+        for(uint32_t shard_index = 0; shard_index < num_shards; ++shard_index) {
+            refresh_member_cache_entry<FirstType>(subgroup_index, shard_index);
+        }
+    }
+    type_recursive_refresh_member_cache<SecondType, RestTypes...>();   
+}
+
+template <typename... CascadeTypes>
+template <typename LastType>
+void ServiceClient<CascadeTypes...>::type_recursive_refresh_member_cache() {
+    auto num_subgroups = get_number_of_subgroups<LastType>();
+    for(uint32_t subgroup_index = 0; subgroup_index < num_subgroups; ++subgroup_index) {
+        auto num_shards = get_number_of_shards<LastType>(subgroup_index);
+        for(uint32_t shard_index = 0; shard_index < num_shards; ++shard_index) {
+            refresh_member_cache_entry<LastType>(subgroup_index, shard_index);
+        }
+    }
+}
+
+template <typename... CascadeTypes>
 template <typename KeyType>
 std::tuple<uint32_t, uint32_t, uint32_t> ServiceClient<CascadeTypes...>::key_to_shard(
         const KeyType& key,
@@ -392,6 +417,19 @@ std::tuple<uint32_t, uint32_t, uint32_t> ServiceClient<CascadeTypes...>::key_to_
     }
     return std::tuple<uint32_t, uint32_t, uint32_t>{opm.subgroup_type_index, opm.subgroup_index,
                                                     opm.key_to_shard_index(key, get_number_of_shards(opm.subgroup_type_index, opm.subgroup_index), check_object_location)};
+}
+
+template <typename... CascadeTypes>
+std::tuple<std::type_index, uint32_t> ServiceClient<CascadeTypes...>::node_id_to_subgroup(node_id_t node_id){
+    std::shared_lock rlck(member_cache_mutex);
+    for(auto& entry : member_cache) {
+        for(auto& member : entry.second) {
+            if(member == node_id) {
+                return std::make_tuple(std::get<0>(entry.first), std::get<1>(entry.first));
+            }
+        }
+    }
+    throw derecho::derecho_exception(std::string(__PRETTY_FUNCTION__) + ": node_id(" + std::to_string(node_id) + ") does not exist in any subgroups");
 }
 
 template <typename... CascadeTypes>
@@ -656,25 +694,29 @@ derecho::rpc::QueryResults<void> ServiceClient<CascadeTypes...>::trigger_put(
 template <typename... CascadeTypes>
 template <typename ObjectType, typename FirstType, typename SecondType, typename... RestTypes>
 void ServiceClient<CascadeTypes...>::type_recursive_single_node_trigger_put(
-        uint32_t type_index,
+        std::type_index type_index,
         const ObjectType& value,
         uint32_t subgroup_index,
-        node_id_t node_id) {
-    if(type_index == 0) {
+        node_id_t node_id,
+        uint32_t round) {
+    if(type_index == std::type_index(typeid(FirstType))) {
+        dbg_default_trace("Before put to round{}", round);
         single_node_trigger_put<FirstType>(value, subgroup_index, node_id);
     } else {
-        type_recursive_single_node_trigger_put<ObjectType, SecondType, RestTypes...>(type_index - 1, value, subgroup_index, node_id);
+        type_recursive_single_node_trigger_put<ObjectType, SecondType, RestTypes...>(type_index, value, subgroup_index, node_id, round++);
     }
 }
 
 template <typename... CascadeTypes>
 template <typename ObjectType, typename LastType>
 void ServiceClient<CascadeTypes...>::type_recursive_single_node_trigger_put(
-        uint32_t type_index,
+        std::type_index type_index,
         const ObjectType& value,
         uint32_t subgroup_index,
-        node_id_t node_id) {
-    if(type_index == 0) { 
+        node_id_t node_id,
+        uint32_t round) {
+    if(type_index == std::type_index(typeid(LastType))) { 
+        dbg_default_trace("Before put to round{}", round);
         single_node_trigger_put<LastType>(value, subgroup_index, node_id);
     } else {
         throw derecho::derecho_exception(std::string(__PRETTY_FUNCTION__) + ": type index is out of boundary.");
@@ -688,9 +730,6 @@ void ServiceClient<CascadeTypes...>::single_node_trigger_put(
         uint32_t subgroup_index,
         node_id_t node_id) {
     std::lock_guard<std::mutex> lck(this->group_ptr_mutex);
-    auto temp =group_ptr->template get_my_shard<SubgroupType>(subgroup_index);
-    auto my_id = group_ptr->get_my_id();
-    std::vector<uint32_t> indexes = group_ptr->template get_my_subgroup_indexes<SubgroupType>();
     if(group_ptr->template get_my_shard<SubgroupType>(subgroup_index) != -1 ){
         auto& subgroup_handle = group_ptr->template get_subgroup<SubgroupType>(subgroup_index);
         if( node_id != group_ptr->get_my_id()) {
@@ -715,17 +754,14 @@ template <typename ObjectType>
 void ServiceClient<CascadeTypes...>::single_node_trigger_put(
         const ObjectType object,
         node_id_t node_id) {
-    uint32_t type_index, subgroup_index;
-    int32_t shard_index;
-    if(!is_external_client()) {
-        std::tie(type_index, subgroup_index, shard_index) = group_ptr->get_node_shard_index(node_id);
-    } else {
-        std::tie(type_index, subgroup_index, shard_index) = external_group_ptr->get_node_shard_index(node_id);
-    }
-    if(shard_index >= 0 ){ 
-        this->template type_recursive_single_node_trigger_put<ObjectType, CascadeTypes...>(type_index, object, subgroup_index, node_id);
-    }else{
-        throw derecho::derecho_exception(std::string(__PRETTY_FUNCTION__) + ": node_id(" + std::to_string(node_id) + ") does not exist");
+    try{
+        this->template type_recursive_refresh_member_cache<CascadeTypes...>();
+        auto subgroup_info = node_id_to_subgroup(node_id);
+        std::type_index& type_index = std::get<0>(subgroup_info);
+        uint32_t& subgroup_index = std::get<1>(subgroup_info);
+        this->template type_recursive_single_node_trigger_put<ObjectType, CascadeTypes...>(type_index, object, subgroup_index, node_id, 0);
+    } catch(derecho::derecho_exception& ex) {
+        dbg_default_warn("Invalid subgroup exception: {}", ex.what());
     }
 }
 
@@ -2804,6 +2840,8 @@ std::string CascadeContext<CascadeTypes...>::tide_scheduler(std::string entry_pr
      // in the algorithm denote task ~ vertex pathname
      std::unordered_map<std::string, std::tuple<node_id_t,uint64_t>> allocated_tasks_info;
      std::vector<node_id_t> workers_set = this->get_service_client_ref().get_members();
+     // remove node_id 0 from worker_set, since it is metadata server
+     workers_set.erase(std::remove(workers_set.begin(), workers_set.end(), 0), workers_set.end());
      pre_adfg_t pre_adfg = this->get_pre_adfg(entry_prefix);
      uint64_t cur_us = get_time_us(true);
      /** TODO: optimize this get_sorted_pathnames step by better design of where to store sorted_pathnames in pre_adfg_t */
@@ -2816,7 +2854,7 @@ std::string CascadeContext<CascadeTypes...>::tide_scheduler(std::string entry_pr
           std::set<node_id_t> preq_workers;
           std::vector<std::string>& required_tasks = std::get<0>(dependencies);
           for(auto& preq_task : required_tasks){
-/** TODO: std::tuple<node_id_t,uint64_t>& of allocated_tasks_info.at(preq_task)  */
+          /** TODO: std::tuple<node_id_t,uint64_t>& of allocated_tasks_info.at(preq_task)  */
                preq_workers.emplace(std::get<0>(allocated_tasks_info.at(preq_task)));
                uint64_t preq_finish_time = std::get<1>(allocated_tasks_info.at(preq_task));
                uint32_t preq_result_size = std::get<4>(pre_adfg.at(pathname));
