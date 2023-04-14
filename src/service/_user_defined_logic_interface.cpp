@@ -87,10 +87,15 @@ void DefaultOffCriticalDataPathObserver::operator() (
                         }
                     }
                     if(scheduled){
-                        dbg_default_trace("~~~~~~ scheduled in emit ~~~~~~~");
-                        /** TODO: Check if next task is scheduled on the same node, for data locality consideration, 
-                         * then it should execute the next task right after this task. Current implementation could be further optimized */
-                        typed_ctxt->get_service_client_ref().single_node_trigger_put(obj_to_send, scheduled_node_id);
+                        if(scheduled_node_id != sender){
+                            dbg_default_trace("~~~~~~ scheduled the next node to different node in emit ~~~~~~~");
+                            typed_ctxt->get_service_client_ref().single_node_trigger_put(obj_to_send, scheduled_node_id);
+                        }else{
+                            dbg_default_trace("~~~~~~ scheduled the next node to the same node in emit ~~~~~~~");
+                            typed_ctxt->find_handlers_and_local_post(obj_to_send);
+                        }
+                        
+                        
                     }else{
                         if (okv.second) {
                             // temp fix since prefix does not have corresponding object pool in console_printer example

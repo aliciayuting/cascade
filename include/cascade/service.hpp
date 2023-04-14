@@ -224,7 +224,7 @@ namespace cascade {
          *  @param worker_id
          */
         inline void fire(ICascadeContext* ctxt,uint32_t worker_id) {
-            if (ocdpo_ptr && required_object_pathnames.size() < 1) {
+            if (ocdpo_ptr && required_object_pathnames.size() <= 1) {
                 dbg_default_trace("In {}: [worker_id={}] action is fired.", __PRETTY_FUNCTION__, worker_id);
                 dbg_default_trace("Fired Action name: {}, adfg: {}.", key_string, adfg);
                 (*ocdpo_ptr)(sender,key_string,prefix_length,version,value_ptrs.at(0).get(),outputs,ctxt,worker_id, adfg);
@@ -1935,6 +1935,12 @@ namespace cascade {
          * @param entry_pathname        - the path name of the entry vertex of the dfg
         */
         virtual pre_adfg_t get_pre_adfg(const std::string& vertex_pathname);
+        /**
+         * Helper function for scheduler DAG structure trigger_put, if the next task is to be executed on the same machine
+         * @param key           - key name of the object
+         * @param value         - the object
+        */
+        virtual void find_handlers_and_local_post(ObjectWithStringKey& value);
         /**
          * post an action to the Context for processing.
          *

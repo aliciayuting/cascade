@@ -2534,13 +2534,29 @@ Action CascadeContext<CascadeTypes...>::action_queue::action_buffer_dequeue(std:
     Action ret;
     // bool found_action = false;
     /**
-     * TODO: optimize this!
-     * Allow the following actions able to execute if head is not ready
+     * TODO: current atomic action_buffer_head/tail implementation only works for single-threaded workhorse.
     */
-    if(!ACTION_BUFFER_IS_EMPTY && (ACTION_BUFFER_HEAD.received_all_preq_values() )) {
-        ret = std::move(ACTION_BUFFER_HEAD);
-        ACTION_BUFFER_DEQUEUE;
-        action_buffer_slot_cv.notify_one();
+    if(!ACTION_BUFFER_IS_EMPTY ) {
+        if(ACTION_BUFFER_HEAD.received_all_preq_values()){
+            ret = std::move(ACTION_BUFFER_HEAD);
+            ACTION_BUFFER_DEQUEUE;
+            action_buffer_slot_cv.notify_one();
+        }else{
+            size_t cursor = action_buffer_head.load();
+            while(cursor != action_buffer_tail){
+                if(action_buffer[cursor].received_all_preq_values()){
+                    ret = std::move(action_buffer[cursor]);
+                    while(cursor != action_buffer_head.load()){
+                        action_buffer[cursor] = std::move(action_buffer[(cursor + ACTION_BUFFER_SIZE - 1) % ACTION_BUFFER_SIZE]);
+                        cursor = (cursor + ACTION_BUFFER_SIZE - 1) % ACTION_BUFFER_SIZE;
+                    }
+                    ACTION_BUFFER_DEQUEUE;
+                    action_buffer_slot_cv.notify_one();
+                    break;
+                }
+                cursor = (cursor + 1) % ACTION_BUFFER_SIZE;
+            }
+        }
     }
 
     return ret;
@@ -2705,6 +2721,113 @@ pre_adfg_t CascadeContext<CascadeTypes...>::get_pre_adfg(const std::string& vert
     pre_adfg_t empty_pre_adfg;
     return empty_pre_adfg;
 }
+
+template <typename... CascadeTypes>
+void CascadeContext<CascadeTypes...>::find_handlers_and_local_post(ObjectWithStringKey& value){
+/** This function is called by single_node_trigger_put if the next node is my_node_id.  Only handle trigger_put 
+ * TODO: in current scheduler implementation, 
+ * assume the handlers for the same pathname got assign to the same worker to be executed. 
+ */                              
+            const std::string& key = value.get_key_ref();
+            size_t pos = key.rfind(PATH_SEPARATOR);
+            std::string prefix;
+            if(pos != std::string::npos) {
+                // important: we need to keep the trailing PATH_SEPARATOR
+                prefix = key.substr(0, pos + 1);
+            }
+            auto handlers = this->get_prefix_handlers(prefix);
+            if(handlers.empty()) {
+                return;
+            }
+            bool is_trigger = true; /** TODO: temp fix, check if it is trigger_put */
+            // filter for normal put (put/put_and_forget)
+            bool new_actions = false;
+            {
+                for(auto& per_prefix : handlers) {
+                    // per_prefix.first is the matching prefix
+                    // per_prefix.second is a set of handlers
+                    for(auto it = per_prefix.second.cbegin(); it != per_prefix.second.cend();) {
+                        // it->first is handler uuid
+                        // it->second is a 5-tuple of shard dispatcher,stateful,hook,ocdpo,and outputs;
+#ifdef HAS_STATEFUL_UDL_SUPPORT
+                        if((std::get<2>(it->second) == DataFlowGraph::VertexHook::ORDERED_PUT && is_trigger) || (std::get<2>(it->second) == DataFlowGraph::VertexHook::TRIGGER_PUT && !is_trigger)) {
+#else
+                        if((std::get<1>(it->second) == DataFlowGraph::VertexHook::ORDERED_PUT && is_trigger) || (std::get<1>(it->second) == DataFlowGraph::VertexHook::TRIGGER_PUT && !is_trigger)) {
+#endif
+                            // not my hook, skip it.
+                            per_prefix.second.erase(it++);
+#ifdef HAS_STATEFUL_UDL_SUPPORT
+                        } else if((std::get<2>(it->second) != DataFlowGraph::VertexHook::ORDERED_PUT) && is_trigger) {
+#else
+                        } else if((std::get<1>(it->second) != DataFlowGraph::VertexHook::ORDERED_PUT) && is_trigger) {
+#endif
+                            new_actions = true;
+                            it++;
+                        } else {
+                            switch(std::get<0>(it->second)) {
+                                case DataFlowGraph::VertexShardDispatcher::ONE:
+                                    new_actions = true;
+                                    it++;
+                                    break;
+                                case DataFlowGraph::VertexShardDispatcher::ALL:
+                                    new_actions = true;
+                                    it++;
+                                    break;
+                                default:
+                                    per_prefix.second.erase(it++);
+                                    break;
+                            }
+                        }
+                    }
+                }
+            }
+            if(!new_actions) {
+                return;
+            }
+            // copy data
+            auto value_ptr = std::make_shared<ObjectWithStringKey>(value);
+            node_id_t sender_id = this->get_service_client_ref().get_my_id();
+            // create actions
+            for(auto& per_prefix : handlers) {
+                // per_prefix.first is the matching prefix
+                // per_prefix.second is a set of handlers
+                for(const auto& handler : per_prefix.second) {
+                    // handler.first is handler uuid
+                    // handler.second is a 4,5-tuple of shard dispatcher,stateful,hook,ocdpo,and outputs;
+                    Action action(
+                            sender_id,
+                            key,
+                            per_prefix.first.size(),
+                            value.get_version(),
+                            value.get_adfg(),
+#ifdef HAS_STATEFUL_UDL_SUPPORT
+                            std::get<3>(handler.second),  // ocdpo
+#else
+                            std::get<2>(handler.second),  // ocdpo
+#endif
+                            value_ptr,
+#ifdef HAS_STATEFUL_UDL_SUPPORT
+                            std::get<4>(handler.second),  // required object pathnames
+                            std::get<5>(handler.second),  // outputs
+#else
+                            std::get<3>(handler.second),  // required object pathnames
+                            std::get<4>(handler.second),  // outputs
+#endif
+                    std::get<1>(handler.second),  // stateful
+                    is_trigger);
+                    // post action
+#ifdef HAS_STATEFUL_UDL_SUPPORT
+                    this->post(std::move(action), std::get<1>(handler.second), is_trigger);
+#else
+                    this->post(std::move(action), is_trigger);
+#endif//HAS_STATEFUL_UDL_SUPPORT
+                }
+            }
+
+}
+            
+
+
 
 template <typename... CascadeTypes>
 #ifdef HAS_STATEFUL_UDL_SUPPORT
