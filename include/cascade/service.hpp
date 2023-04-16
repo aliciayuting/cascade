@@ -105,7 +105,7 @@ namespace cascade {
                                  const std::unordered_map<std::string,bool>& outputs,
                                  ICascadeContext* ctxt,
                                  uint32_t worker_id,
-                                 std::string adfg=""){}
+                                 std::string adfg="") = 0;
     };
     /**
      * Action is an command passed from the on critical data path logic (cascade watcher) to the off critical data path
@@ -229,7 +229,7 @@ namespace cascade {
                 dbg_default_trace("Fired Action name: {}, adfg: {}.", key_string, adfg);
                 (*ocdpo_ptr)(sender,key_string,prefix_length,version,value_ptrs.at(0).get(),outputs,ctxt,worker_id, adfg);
             }else if(ocdpo_ptr){
-                dbg_default_trace("In {}: [worker_id={}] JOINT-vetex action is fired.", __PRETTY_FUNCTION__, worker_id);
+                dbg_default_trace("In {}: [worker_id={}] JOINT-vertex action is fired.", __PRETTY_FUNCTION__, worker_id);
                 dbg_default_trace("Fired Action name: {}, adfg: {}.", key_string, adfg);
                 (*ocdpo_ptr)(sender,key_string,prefix_length,version,value_ptrs,outputs,ctxt,worker_id, adfg);
             }
@@ -1746,6 +1746,7 @@ namespace cascade {
             mutable std::condition_variable action_buffer_data_cv;
             inline void initialize();
             inline void action_buffer_enqueue(Action&&);
+            inline bool action_buffer_emplace(Action& action);
             inline Action action_buffer_dequeue(std::atomic<bool>& is_running);
             inline void notify_all();
         };

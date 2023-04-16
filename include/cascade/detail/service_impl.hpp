@@ -2523,6 +2523,23 @@ void CascadeContext<CascadeTypes...>::action_queue::action_buffer_enqueue(Action
     action_buffer_data_cv.notify_one();
 }
 
+template <typename... CascadeTypes>
+bool CascadeContext<CascadeTypes...>::action_queue::action_buffer_emplace(Action& action) {
+    std::unique_lock<std::mutex> lck(action_buffer_slot_mutex);
+    size_t cursor = action_buffer_head.load();
+    while(cursor != action_buffer_tail.load()){
+        /** TODO: check for timestamp&version as well*/
+        if(action_buffer[cursor].key_string == action.key_string){
+            action_buffer[cursor].add_value_ptr(action.value_ptrs[0]);
+            action_buffer_data_cv.notify_one();
+            return true;
+        }
+        cursor = (cursor + 1) % ACTION_BUFFER_SIZE;
+    }
+    return false;
+}   
+
+
 /* All worker threads dequeues. */
 template <typename... CascadeTypes>
 Action CascadeContext<CascadeTypes...>::action_queue::action_buffer_dequeue(std::atomic<bool>& is_running) {
@@ -2825,8 +2842,6 @@ void CascadeContext<CascadeTypes...>::find_handlers_and_local_post(ObjectWithStr
             }
 
 }
-            
-
 
 
 template <typename... CascadeTypes>
@@ -2850,8 +2865,17 @@ bool CascadeContext<CascadeTypes...>::post(Action&& action, bool is_trigger) {
 #ifdef HAS_STATEFUL_UDL_SUPPORT
                     break;
                 case DataFlowGraph::Statefulness::SINGLETHREADED:
-                    single_threaded_action_queue_for_p2p.action_buffer_enqueue(std::move(action));
-                    break;
+                    // check if action is in single_threaded_action_queue_for_p2p, if it is add_value_ptr to that action                    
+                    if(action.required_object_pathnames.size() > 1){
+                        bool task_with_same = single_threaded_action_queue_for_p2p.action_buffer_emplace(action);
+                        if(!task_with_same){
+                            single_threaded_action_queue_for_p2p.action_buffer_enqueue(std::move(action));
+                        }
+                        break;
+                    }else{
+                        single_threaded_action_queue_for_p2p.action_buffer_enqueue(std::move(action));
+                        break;
+                    }
             }
 #endif
         } else {
@@ -2867,8 +2891,17 @@ bool CascadeContext<CascadeTypes...>::post(Action&& action, bool is_trigger) {
 #ifdef HAS_STATEFUL_UDL_SUPPORT
                     break;
                 case DataFlowGraph::Statefulness::SINGLETHREADED:
-                    single_threaded_action_queue_for_multicast.action_buffer_enqueue(std::move(action));
-                    break;
+                    // check if action is in single_threaded_action_queue_for_p2p, if it is add_value_ptr to that action                    
+                    if(action.required_object_pathnames.size() > 1){
+                        bool task_with_same = single_threaded_action_queue_for_multicast.action_buffer_emplace(action);
+                        if(!task_with_same){
+                            single_threaded_action_queue_for_multicast.action_buffer_enqueue(std::move(action));
+                        }
+                        break;
+                    }else{
+                        single_threaded_action_queue_for_multicast.action_buffer_enqueue(std::move(action));
+                        break;
+                    }
             }
 #endif
         }

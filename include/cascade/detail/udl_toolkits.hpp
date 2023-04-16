@@ -26,7 +26,7 @@ public:
             const std::unordered_map<std::string,bool>& outputs,
             ICascadeContext* ctxt,
             uint32_t worker_id,
-            std::string adfg){}
+            std::string adfg) override;
 
     virtual void ocdpo_handler (
             const node_id_t                 sender,
