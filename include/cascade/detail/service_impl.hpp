@@ -2453,6 +2453,7 @@ void CascadeContext<CascadeTypes...>::tide_scheduler_workhorse(uint32_t worker_i
     while(is_running) {
         // waiting for an action
         Action action = std::move(aq.action_buffer_dequeue(is_running));
+        if(!action) continue;
         this->fire_scheduler(std::move(action), worker_id);
         if(!is_running) {
             do {
@@ -2999,6 +3000,10 @@ std::string CascadeContext<CascadeTypes...>::tide_scheduler(std::string entry_pr
      // remove node_id 0 from worker_set, since it is metadata server
      workers_set.erase(std::remove(workers_set.begin(), workers_set.end(), 0), workers_set.end());
      pre_adfg_t pre_adfg = this->get_pre_adfg(entry_prefix);
+     if(pre_adfg.empty()){
+            dbg_default_error("CascadeContext::tide_scheduler pre_adfg is empty");
+            return "";
+     }
      uint64_t cur_us = get_time_us(true);
      /** TODO: optimize this get_sorted_pathnames step by better design of where to store sorted_pathnames in pre_adfg_t */
      std::vector<std::string>& sorted_pathnames = std::get<3>(pre_adfg.at(entry_prefix));

@@ -162,7 +162,7 @@ class CascadeServiceCDPO : public CriticalDataPathObserver<CascadeType> {
                                          apei.uint64_val);
                     // check if this job instance has been scheduled, if post it to unscheduled_queue for scheduler to schedule the whole job instance
                     // REQUIRED SINGLE ENTRY TASK FOR SCHEDULER
-                    if(value_ptr->get_adfg().empty() && handlers.size() == 1){
+                    if(value_ptr->get_adfg().empty() && handlers.size() == 1 && action.prefix_length != 0){
                         ctxt->post_to_scheduler(std::move(action));
                         return;
                     }
