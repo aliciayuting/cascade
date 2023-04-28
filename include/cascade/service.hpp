@@ -1621,10 +1621,10 @@ namespace cascade {
 
         /**
          * Helper for scheduler accessing derechoSST
-         * Get the updated gpu_models of all nodes in the group from derechoSST
-         * @param  _group_gpu_models     CascadeContext cached group's gpu_models information to update
+         * Get the updated cached_models_info of all nodes in the group from derechoSST
+         * @param  _group_cached_models_info     CascadeContext cached group's gpu_models information to update
         */
-        void get_updated_group_gpu_models(std::unordered_map<node_id_t, std::set<uint32_t>>& _group_gpu_models);
+        void get_updated_group_cached_models_info(std::unordered_map<node_id_t, std::set<uint32_t>>& _group_cached_models_info);
 
         /**
          * Get the updated load_info of all nodes in the group from derechoSST
@@ -1633,10 +1633,10 @@ namespace cascade {
         void get_updated_group_queue_wait_times(std::unordered_map<node_id_t, uint64_t>& _group_queue_wait_times);
 
         /**
-         * Send the local updated gpu_models to all nodes in the group, via derechoSST
-         * @param  _group_queue_wait_times     local gpu_models information from CascadeContext 
+         * Send the local updated cached_models_info to all nodes in the group, via derechoSST
+         * @param  _local_group_models     local cached_models_info information from CascadeContext 
         */
-        void send_local_gpu_models(const std::set<uint32_t>& _local_group_models);
+        void send_local_cached_models_info_to_group(const std::set<uint32_t>& _local_group_models);
 
         /**
          * Send the local updated queue_wait_time to all nodes in the group, via derechoSST
@@ -1721,18 +1721,14 @@ namespace cascade {
                 >;
     using match_results_t = std::unordered_map<std::string,prefix_entry_t>;
 /** TODO: change to vector instead of map for small number of elements, which would be faster. Same for set->vector*/
-    using pre_adfg_t = 
-                std::unordered_map<
+    struct pre_adfg_t{
+        std::unordered_map<
                     std::string, //pathname
-                    std::tuple<
-                        std::vector<std::string>,                         // required_objects_pathnames
-                        std::vector<uint32_t>,                            // required_models
-                        std::vector<uint32_t>,                             // required_models_size
-                        std::vector<std::string>,                       // sorted_pathnames
-                        uint32_t,                                       // expected output size in KB
-                        uint64_t                                        // estimated excution time in us
-                    >
-                >;
+                    DataFlowGraph::TaskInfo //task info
+                > task_info_map;
+        std::vector<std::string>    sorted_pathnames;
+    };
+            
     template <typename... CascadeTypes>
     class CascadeContext: public ICascadeContext {
     private:
@@ -1768,12 +1764,6 @@ namespace cascade {
          * prefix->{udl_id->{ocdpo,{prefix->trigger_put/put}}
          */
         std::shared_ptr<PrefixRegistry<prefix_entry_t,PATH_SEPARATOR>> prefix_registry_ptr;
-        /** mapping between {entry_pathname of the dfg -> pre_adfg_t}
-         * where pre_adfg_t is mapping of
-         *   {vertex_pathname -> tuple(dependent_objects_pathnames, required_models, ranked_verticies_pathnames)}
-        */
-        std::unordered_map<std::string, pre_adfg_t> pre_adfg_dependencies;
-        mutable std::shared_mutex      pre_adfg_dependencies_mutex;
         /** the data path logic loader */
         std::unique_ptr<UserDefinedLogicManager<CascadeTypes...>> user_defined_logic_manager;
         /** the off-critical data path worker thread pools */
@@ -1787,16 +1777,24 @@ namespace cascade {
 #endif//HAS_STATEFUL_UDL_SUPPORT
         std::thread              scheduler_workhorse;  // scheduler thread
         
-        /** Scheduler used information. */
-        std::atomic<uint64_t>  local_queue_wait_time;
-        std::set<uint32_t>  local_gpu_models;
-        mutable std::shared_mutex local_gpu_models_mutex;
+         /** information used by scheduler 
+         * mapping between {entry_pathname of the dfg -> pre_adfg_t}
+         */
+        std::unordered_map<std::string, pre_adfg_t> pre_adfg_dependencies;
+        mutable std::shared_mutex      pre_adfg_dependencies_mutex;
 
-        std::unordered_map<node_id_t, std::set<uint32_t>>  group_gpu_models; // include all other nodes info, beside this node
+        std::unordered_map<uint32_t, DataFlowGraph::MLModelInfo> models_info_cache;
+        mutable std::shared_mutex      models_info_cache_mutex;
+
+        std::atomic<uint64_t>  local_queue_wait_time;
+        std::set<uint32_t>  local_cached_models_info;
+        mutable std::shared_mutex local_cached_models_info_mutex;
+
+        std::unordered_map<node_id_t, std::set<uint32_t>>  group_cached_models_info; // include all other nodes info, beside this node
         std::unordered_map<node_id_t, uint64_t>            group_queue_wait_times;// include all other nodes info, beside this node
-        mutable std::shared_mutex      group_gpu_models_mutex;
+        mutable std::shared_mutex      group_cached_models_info_mutex;
         mutable std::shared_mutex      group_queue_wait_times_mutex;
-        std::atomic<uint64_t>   last_group_gpu_models_update_timeus;
+        std::atomic<uint64_t>   last_group_cached_models_info_update_timeus;
         std::atomic<uint64_t>   last_group_queue_wait_times_update_timeus;
 
         /**
@@ -1984,6 +1982,7 @@ namespace cascade {
          * @return wait_time the estimated queueing wait time on that node
         */
         uint64_t check_queue_wait_time(node_id_t node_id);
+
         /**
          * check if certain model exist in the node's gpu, based on local cache info
          * @param  node_id  the node id to query about its models in gpu 
@@ -1991,8 +1990,32 @@ namespace cascade {
          * @return bool     
         */
         bool check_if_model_in_gpu(node_id_t node_id, uint32_t model_id);
+
+        /**
+         * Helper function to get the model info cached locally
+         * @param  model_id the model_id to find its MLModelInfo
+         * @return MLModelInfo 
+        */
+       DataFlowGraph::MLModelInfo get_model_info(uint32_t model_id);
+
+        /**
+         * update group cached_models_info information in derechoSST, 
+         * when there is local eviction to GPU memory on this node.
+        */
+        void update_local_info_model_evict(uint32_t model_ids);
+
+        /**
+         * update group cached_models_info information in derechoSST, 
+         * when there is local eviction to GPU memory on this node.
+        */
+        void update_local_info_model_fetch(uint32_t model_ids);
         
-        /** Helper function to check local cached group_gpu_models and group_queue_wait_times
+        /**
+         * send local_cached_models_info to all nodes in the group
+        */
+       void send_local_cached_models_info();
+
+        /** Helper function to check local cached group_cached_models_info and group_queue_wait_times
         */
         std::string local_cached_info_dump();
 

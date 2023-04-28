@@ -2158,7 +2158,8 @@ uint32_t ServiceClient<CascadeTypes...>::get_subgroup_type_index() {
 }
 
 template <typename... CascadeTypes>
-void ServiceClient<CascadeTypes...>::get_updated_group_gpu_models(std::unordered_map<node_id_t, std::set<uint32_t>>& _group_gpu_models) {
+void ServiceClient<CascadeTypes...>::get_updated_group_cached_models_info(std::unordered_map<node_id_t, std::set<uint32_t>>& _group_cached_models_info) {
+    _group_cached_models_info.clear();
     std::vector<node_id_t> nodes = group_ptr->get_members();
     for(node_id_t node_id : nodes){
         uint64_t encoded_models = group_ptr->get_cache_models_info(node_id);
@@ -2168,7 +2169,7 @@ void ServiceClient<CascadeTypes...>::get_updated_group_gpu_models(std::unordered
                 decoded_models.emplace(k);
             }
         }
-        _group_gpu_models.emplace(node_id, decoded_models);
+        _group_cached_models_info.emplace(node_id, decoded_models);
     }
 }
 
@@ -2182,7 +2183,7 @@ void ServiceClient<CascadeTypes...>::get_updated_group_queue_wait_times(std::uno
 }
 
 template <typename... CascadeTypes>
-void ServiceClient<CascadeTypes...>::send_local_gpu_models(const std::set<uint32_t>& _local_group_models) {
+void ServiceClient<CascadeTypes...>::send_local_cached_models_info_to_group(const std::set<uint32_t>& _local_group_models) {
     uint64_t encoded_models = 0;
     for(int k = 0; k < 64; ++k) {
         if(_local_group_models.find(k) != _local_group_models.end()) {
@@ -2242,15 +2243,16 @@ void CascadeContext<CascadeTypes...>::construct() {
     // TODO: implement the control plane.
     user_defined_logic_manager = UserDefinedLogicManager<CascadeTypes...>::create(this);
     auto dfgs = DataFlowGraph::get_data_flow_graphs();
+    std::unordered_map<uint32_t, DataFlowGraph::MLModelInfo> _models_info_cache;
     for(auto& dfg : dfgs) {
         pre_adfg_t pre_adfg;
         std::string entry_pathname;
         if (dfg.sorted_pathnames.size() != 0){
             entry_pathname = dfg.sorted_pathnames[0];
+            pre_adfg.sorted_pathnames = dfg.sorted_pathnames;
         }
+        dbg_default_warn("~~~~~ ABOUT to process pathname: {} ", entry_pathname);
         for(auto& vertex : dfg.vertices) {
-            uint32_t result_size = 0;
-            uint64_t expected_runtime = 0;
             for(auto& edge : vertex.second.edges) {
                 register_prefixes(
                         {vertex.second.pathname},
@@ -2263,17 +2265,15 @@ void CascadeContext<CascadeTypes...>::construct() {
                         user_defined_logic_manager->get_observer(
                                 edge.first,  // UUID
                                 vertex.second.configurations.at(edge.first)),
-                        vertex.second.required_objects_pathnames,
+                        vertex.second.task_info.required_objects_pathnames,
                         edge.second);
-                expected_runtime = expected_runtime + vertex.second.expected_execution_timeus.at(edge.first);
-                result_size = result_size + vertex.second.expected_output_size.at(edge.first);
             }
-            pre_adfg.emplace(std::piecewise_construct, std::forward_as_tuple(vertex.first),
-                    std::forward_as_tuple(vertex.second.required_objects_pathnames, 
-                                        vertex.second.required_models,
-                                        vertex.second.required_models_size, 
-                                        dfg.sorted_pathnames, 
-                                        result_size, expected_runtime));
+            dbg_default_warn("~~~~~ Registered prefix {} ", vertex.second.pathname);
+            pre_adfg.task_info_map.emplace(vertex.first, vertex.second.task_info);
+            // add the model from task_info to the local model cache
+            for(auto& model_info : vertex.second.task_info.models_info) {
+                _models_info_cache.emplace(model_info.model_id, model_info);
+            }
         }
         if (!entry_pathname.empty()){
             std::unique_lock<std::shared_mutex> wlck(this->pre_adfg_dependencies_mutex);
@@ -2283,6 +2283,10 @@ void CascadeContext<CascadeTypes...>::construct() {
         }
         // Testing purposes
         dfg.dump();
+    }
+    if(!_models_info_cache.empty()){
+        std::unique_lock<std::shared_mutex> wlck(this->models_info_cache_mutex);
+        models_info_cache = std::move(_models_info_cache);
     }
     // 2 - start the working threads
     is_running.store(true);
@@ -2728,7 +2732,7 @@ pre_adfg_t CascadeContext<CascadeTypes...>::get_pre_adfg(const std::string& vert
         if(pre_adfg.first == vertex_pathname){
             return pre_adfg.second;
         }else{
-            for(auto& vertex_info: pre_adfg.second){
+            for(auto& vertex_info: pre_adfg.second.task_info_map){
                 if(vertex_info.first == vertex_pathname){
                     return pre_adfg.second;
                 }
@@ -2959,14 +2963,38 @@ template <typename... CascadeTypes>
 bool CascadeContext<CascadeTypes...>::check_if_model_in_gpu(node_id_t node_id, uint32_t model_id) {
     uint64_t cur_us = get_time_us(true);
     /** TODO: move this threshold to config, currently set it to every 10sec*/
-    if(cur_us - last_group_gpu_models_update_timeus > 10000000) {
-        last_group_gpu_models_update_timeus = cur_us;
-        std::unique_lock<std::shared_mutex> wlck(this->group_gpu_models_mutex);
-        this->get_service_client_ref().get_updated_group_gpu_models(this->group_gpu_models);
+    if(cur_us - last_group_cached_models_info_update_timeus > 10000000) {
+        last_group_cached_models_info_update_timeus = cur_us;
+        std::unique_lock<std::shared_mutex> wlck(this->group_cached_models_info_mutex);
+        this->get_service_client_ref().get_updated_group_cached_models_info(this->group_cached_models_info);
     }
-    std::shared_lock rlck(this->group_gpu_models_mutex);
-    bool exist_model_in_gpu = this->group_gpu_models[node_id].find(model_id) != this->group_gpu_models[node_id].end();
+    std::shared_lock rlck(this->group_cached_models_info_mutex);
+    bool exist_model_in_gpu = this->group_cached_models_info[node_id].find(model_id) != this->group_cached_models_info[node_id].end();
     return exist_model_in_gpu;
+}
+
+template <typename... CascadeTypes>
+DataFlowGraph::MLModelInfo CascadeContext<CascadeTypes...>::get_model_info(uint32_t model_id){
+    std::shared_lock rlck(this->models_info_cache_mutex);
+    return this->models_info_cache[model_id];
+}
+
+template <typename... CascadeTypes>
+void CascadeContext<CascadeTypes...>::update_local_info_model_evict(uint32_t model_id){
+    std::unique_lock wlck(this->local_cached_models_info_mutex);
+    this->local_cached_models_info.erase(model_id);
+}
+
+template <typename... CascadeTypes>
+void CascadeContext<CascadeTypes...>::update_local_info_model_fetch(uint32_t model_id){
+    std::unique_lock wlck(this->local_cached_models_info_mutex);
+    this->local_cached_models_info.emplace(model_id);
+}
+
+template <typename... CascadeTypes>
+void CascadeContext<CascadeTypes...>::send_local_cached_models_info(){
+    std::shared_lock<std::shared_mutex> rlck(this->local_cached_models_info_mutex);
+    this->get_service_client_ref().send_local_cached_models_info_to_group(this->local_cached_models_info);
 }
 
 template <typename... CascadeTypes>
@@ -2976,12 +3004,12 @@ std::string CascadeContext<CascadeTypes...>::local_cached_info_dump() {
         + "\tCached group info:\n"
         + "\tnode_id,  queue_wait_time, cached_models \n";
     std::shared_lock rlck_wait_time(this->group_queue_wait_times_mutex);
-    std::shared_lock rlck_models_gpu(this->group_gpu_models_mutex);
+    std::shared_lock rlck_models_gpu(this->group_cached_models_info_mutex);
     for(auto& [node_id, wait_time] : this->group_queue_wait_times) {
         out = out + std::to_string(node_id) + ", " + std::to_string(wait_time) + ", ";
         out = out + "[";
         // std::set<uint32_t>::iterator itr;
-        for(auto models : this->group_gpu_models[node_id]) {
+        for(auto models : this->group_cached_models_info[node_id]) {
             out = out + std::to_string(models) + ", ";
         }
         out = out + "]\n";
@@ -2995,87 +3023,68 @@ template <typename... CascadeTypes>
 std::string CascadeContext<CascadeTypes...>::tide_scheduler(std::string entry_prefix){
      // vertex pathname -> (node_id, finish_time(us))
      // in the algorithm denote task ~ vertex pathname
-     std::unordered_map<std::string, std::tuple<node_id_t,uint64_t>> allocated_tasks_info;
+     std::unordered_map<std::string, std::pair<node_id_t,uint64_t>> allocated_tasks_info;
      std::vector<node_id_t> workers_set = this->get_service_client_ref().get_members();
      // remove node_id 0 from worker_set, since it is metadata server
      workers_set.erase(std::remove(workers_set.begin(), workers_set.end(), 0), workers_set.end());
      pre_adfg_t pre_adfg = this->get_pre_adfg(entry_prefix);
-     if(pre_adfg.empty()){
+     if(pre_adfg.sorted_pathnames.empty()){
             dbg_default_error("CascadeContext::tide_scheduler pre_adfg is empty");
             return "";
      }
      uint64_t cur_us = get_time_us(true);
-     /** TODO: optimize this get_sorted_pathnames step by better design of where to store sorted_pathnames in pre_adfg_t */
-     std::vector<std::string>& sorted_pathnames = std::get<3>(pre_adfg.at(entry_prefix));
-     for(auto& pathname: sorted_pathnames){
-          auto& dependencies = pre_adfg.at(pathname);
-          // 0. PRE-COMPUTE (used later by 2. case1) get the earliest start time, suppose all preq_tasks need to transfer data
-          uint64_t prev_EST = cur_us;
-          // the worker_ids where pre-requisit tasks are executed
-          std::set<node_id_t> preq_workers;
-          std::vector<std::string>& required_tasks = std::get<0>(dependencies);
-          for(auto& preq_task : required_tasks){
-          /** TODO: std::tuple<node_id_t,uint64_t>& of allocated_tasks_info.at(preq_task)  */
-               preq_workers.emplace(std::get<0>(allocated_tasks_info.at(preq_task)));
-               uint64_t preq_finish_time = std::get<1>(allocated_tasks_info.at(preq_task));
-               uint32_t preq_result_size = std::get<4>(pre_adfg.at(pathname));
-               uint64_t preq_arrive_time = preq_finish_time + GPU_to_GPU_delay(preq_result_size);
-               prev_EST = std::max(prev_EST, preq_arrive_time);
-          }
-          if(pathname == sorted_pathnames[0]){ // first task
-               /** TODO: assumming input_size=output_size, for finer-grained HEFT, use input size instead of output size*/
-               prev_EST += host_to_GPU_delay(std::get<4>(pre_adfg.at(pathname))); 
-          }
-          std::map<node_id_t, uint64_t> workers_start_times;
-          for(node_id_t cur_worker: workers_set){
-               uint64_t cur_worker_waittime = 0;
-               uint64_t model_fetch_time = 0;
-               cur_worker_waittime = this->check_queue_wait_time(cur_worker);
-               bool models_in_cache;
-               auto& required_models = std::get<1>(pre_adfg.at(pathname));
-               auto& required_models_size = std::get<2>(pre_adfg.at(pathname));
-               for(size_t idx = 0; idx < required_models.size(); idx ++){
-                    models_in_cache = this->check_if_model_in_gpu(cur_worker, required_models[idx]);
-                    if(!models_in_cache){
-                         /** TODO: current design assume host loaded all models at the beginning.
-                          *        later can extend to remote_host_to_GPU, with the udl&model centraliezd store
-                         */
-                         model_fetch_time = model_fetch_time + host_to_GPU_delay(required_models_size[idx]);
-                    }
-               } 
-               /** case 2.1 cur_woker is not the same worker as any of the pre-req tasks'
-                *  input fetching/sending is not blocked by waiting queue, whereas model fetching is
-                */
-               uint64_t start_time;
-               if(preq_workers.find(cur_worker) == preq_workers.end()){
-                    start_time = std::max(prev_EST, cur_us + cur_worker_waittime + model_fetch_time);
-               }else{//case 2.2 cur_worker is on the same node of one of the pre-req tasks
-                    uint64_t preq_arrival_time = 0;
-                    for(auto& preq_task : required_tasks){
-                         node_id_t& preq_worker = std::get<0>(allocated_tasks_info.at(preq_task));
-                         uint64_t& preq_finish_time = std::get<1>(allocated_tasks_info.at(preq_task));
-                         if(cur_worker == preq_worker){
-                              preq_arrival_time = std::max(preq_arrival_time, preq_finish_time);
-                         }else{
-                              preq_arrival_time = std::max(preq_arrival_time, preq_finish_time + GPU_to_GPU_delay(std::get<4>(pre_adfg.at(pathname))));
-                              start_time = std::max(preq_arrival_time, cur_us + cur_worker_waittime + model_fetch_time);
-                         }
-                    }
-               }
-               workers_start_times.emplace(cur_worker,start_time);
-          }
-          auto it = std::min_element(workers_start_times.begin(), workers_start_times.end(),
-                                                       [](const auto& l, const auto& r) { return l.second < r.second; });
-          /** TODO: TEST THIS!!! https://stackoverflow.com/questions/2659248/how-can-i-find-the-minimum-value-in-a-map */
-          node_id_t selected_worker = it->second;
-          uint64_t cur_task_finish_time = it->first + std::get<5>(pre_adfg.at(pathname));
-          allocated_tasks_info.emplace(std::piecewise_construct, std::forward_as_tuple(pathname), std::forward_as_tuple(selected_worker, cur_task_finish_time));
-     }    
-     std::string allocated_machines;
-     for(auto& pathname: sorted_pathnames){
-          allocated_machines +=  std::to_string(std::get<1>(allocated_tasks_info.at(pathname))) + ",";
-     }
-     return allocated_machines;
+     node_id_t local_node_id = this->get_service_client_ref().get_my_id();
+     std::vector<std::string>& sorted_pathnames = pre_adfg.sorted_pathnames;
+     std::unordered_map<node_id_t, uint64_t> earliest_available_times;
+    for(auto& node_id : workers_set){
+        earliest_available_times[node_id] = cur_us + this->check_queue_wait_time(node_id);
+    }
+    for(auto& task_name: sorted_pathnames){
+        auto& task_info = pre_adfg.task_info_map[task_name];
+        // 0. PRE-COMPUTE (used later by 2. case1) get the earliest start time, suppose all preq_tasks need to transfer data
+        node_id_t selected_worker_id = INVALID_NODE_ID;
+	    uint64_t earliest_start_time = UINT64_MAX;
+        for(const auto& cur_worker: workers_set){
+            uint64_t cur_earliest_start_time = cur_us;
+            uint64_t inputs_arrival_time = cur_us;
+            if(task_name == sorted_pathnames[0] && cur_worker != local_node_id){
+                    inputs_arrival_time += CPU_to_CPU_delay(task_info.input_size);
+            }
+            for(std::string& preq_task_name: task_info.required_objects_pathnames){
+                auto& preq_task_info = pre_adfg.task_info_map[preq_task_name];
+                auto& alloc_info = allocated_tasks_info[preq_task_name];
+                uint64_t arrival_time = alloc_info.second;
+                if(cur_worker == alloc_info.first){
+                    arrival_time += CPU_to_CPU_delay(preq_task_info.output_size);
+                }
+                inputs_arrival_time = std::max(inputs_arrival_time, arrival_time);
+            }
+            cur_earliest_start_time = std::max(cur_earliest_start_time, inputs_arrival_time);
+            uint64_t model_fetch_time = 0;
+            for(auto& model_info: task_info.models_info){
+                if(!this->check_if_model_in_gpu(cur_worker, model_info.model_id)){
+                    model_fetch_time += host_to_GPU_delay(model_info.model_size);
+                }
+            }
+            cur_earliest_start_time = std::max(earliest_available_times[cur_worker], earliest_start_time) + model_fetch_time;
+            if(cur_earliest_start_time < earliest_start_time){
+                earliest_start_time = cur_earliest_start_time;
+                selected_worker_id = cur_worker;
+            }
+        }
+        if(selected_worker_id == INVALID_NODE_ID){
+            dbg_default_error("CascadeContext::tide_scheduler selected_worker_id == -1");
+            return "";
+        }
+        uint64_t earliest_finish_time = earliest_start_time + GPU_to_GPU_delay(task_info.input_size) + task_info.expected_execution_timeus;
+        allocated_tasks_info[task_name] = {selected_worker_id, earliest_finish_time};
+        earliest_available_times[selected_worker_id] = earliest_finish_time;
+    }
+    std::string allocated_machines;
+    for(auto& pathname: sorted_pathnames){
+        allocated_machines +=  std::to_string(allocated_tasks_info.at(pathname).first) + ",";
+    }
+    return allocated_machines;
 }
 
 template <typename... CascadeTypes>

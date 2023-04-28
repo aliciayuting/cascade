@@ -99,10 +99,12 @@ namespace cascade {
 #define DFG_JSON_UDL_STATEFUL_LIST      "user_defined_logic_stateful_list"
 #define DFG_JSON_UDL_HOOK_LIST          "user_defined_logic_hook_list"
 #define DFG_JSON_UDL_CONFIG_LIST        "user_defined_logic_config_list"
-#define DFG_JSON_REQUIRED_MODELS_LIST   "required_models_list"
-#define DFG_JSON_REQUIRED_MODELS_SIZE_LIST   "required_models_size_list"
-#define DFG_JSON_UDL_OUTPUT_SIZE_LIST   "output_size_list"  
-#define DFG_JSON_EXEC_TIME_LIST         "expected_gpu_execution_timeus_list"  
+#define DFG_JSON_REQUIRED_MODELS        "required_models_list"
+#define DFG_JSON_MODEL_ID               "model_id"
+#define DFG_JSON_MODEL_SIZE             "model_size"
+#define DFG_JSON_UDL_INPUT_SIZE        "output_size"  
+#define DFG_JSON_UDL_OUTPUT_SIZE        "output_size"  
+#define DFG_JSON_EXEC_TIME              "expected_execution_timeus"  
 #define DFG_JSON_DESTINATIONS           "destinations"
 #define DFG_REQUIRED_OBJECTS_LIST       "required_objects_pathnames"
 #define DFG_JSON_PUT                    "put"
@@ -128,6 +130,22 @@ public:
         SINGLETHREADED,
     };
 
+    /** TODO: Next step
+     * Maybe should split MLModel descriptor from dfg file and include more information*/
+    struct MLModelInfo{
+        int32_t model_id = -1;
+        uint32_t model_size = 0; // in KB
+    };
+    
+    struct TaskInfo{
+        std::vector<std::string> required_objects_pathnames; 
+        /** TODO: expand this, since each task may require multiple models!! */
+        std::vector<MLModelInfo> models_info;
+        uint32_t input_size = 0; 
+        uint32_t output_size = 0;
+        uint64_t expected_execution_timeus = 0;
+    };
+
     // the Hex UUID
     const std::string id;
     // description of the DFG
@@ -135,23 +153,17 @@ public:
     // the vertex table is a map 
     // from pathname (or prefix) 
     // to its vertex structure.
+    /** TODO: discuss the scope and structure of DataFlowGraphVertex. 
+     *  should it be the smallest unit in terms of UDL, or if there is yet another smaller structure?
+     *  Current scheduler implementation assume a DataFlowGraphVertex represent 1 udl
+    */
     struct DataFlowGraphVertex {
         std::string pathname;
         uint32_t task_id;
         // The optional shard dispatcher configuration
         // uuid->shard_dispatcher
         std::unordered_map<std::string,VertexShardDispatcher> shard_dispatchers;
-        // uuid->model_id
-        /** TODO: expand this, since each udl may require multiple models!! */
-        std::vector<uint32_t> required_models;
-        // uuid->model_size in KB
-        std::vector<uint32_t> required_models_size;
-        // uuid->output_size in KB
-        std::unordered_map<std::string, uint32_t> expected_output_size;
-        // uuid->expected_gpu_execution_timeus
-        std::unordered_map<std::string,uint64_t> expected_execution_timeus;
-        // uuid->expected_result_size
-        std::unordered_map<std::string,uint32_t> result_size;
+        
         // uuid->stateful
         std::unordered_map<std::string,Statefulness> stateful;
         // uuid->hook
@@ -163,13 +175,8 @@ public:
         // vertices pool1, pool2, and pool3. The input data is processed by UDL specified by udl_uuid. 
         // include PATH_SEPARATOR at the end
         std::unordered_map<std::string,std::unordered_map<std::string,bool>> edges;
-        // The reverse map of edges, which denotes the required results from previous verticies to execute this vertex. 
-        // include PATH_SEPARATOR at the end
-        std::vector<std::string> required_objects_pathnames; 
-        /** TODO: This assume all the udls in this vertex share the same set of required objects. 
-         *        Need more wholistic scheduler design of the vertex graph structure, do we want udls with the same pathname to be executed 
-         *        on the same node? Do we want to have vertex to just represent intersect of multiple udls, which may be involved with multiple dfgs?
-        */
+        TaskInfo task_info;
+        
         // to string
         inline std::string to_string() const {
             std::ostringstream out;
@@ -204,19 +211,19 @@ public:
                     out << "\t-[udl:" << e.first << "]-" << (pool.second?'*':'-') << "->" << pool.first <<"\n";
                 }
             }
-            out << "required model: ";
-            for (auto& m: required_models) {
-                out << m << ",";
+            out << "\t-TaskInfo: ";
+            out << "\t\t-required_objects_pathnames: ";
+            for (auto& p:task_info.required_objects_pathnames){
+                out << p << ", ";
             }
-            out << "required model sizes: ";
-            for (auto& ms: required_models_size) {
-                out << ms << ",";
+            out << "\n";
+            out << "\t\t-models_info: ";
+            for (auto& m:task_info.models_info){
+                out << "\t\t\t" << m.model_id << ":" << m.model_size << "KB, ";
             }
-            out << "\nrequired objects pathnames: ";
-            for (auto& rop: required_objects_pathnames) {
-                out << rop << ",";
-            }
-            out << "\n}";
+            out << "\n";
+            out << "\t\t-output_size: " << task_info.output_size << "\n";
+            out << "\t\t-expected_execution_timeus: " << task_info.expected_execution_timeus << "\n";
             return out.str();
         }
     };

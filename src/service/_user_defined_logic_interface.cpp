@@ -47,10 +47,7 @@ void DefaultOffCriticalDataPathObserver::operator() (
                     pre_adfg_t pre_adfg = typed_ctxt->get_pre_adfg(pre_adfg_pathname);
                     std::regex rgx(",");
                     std::sregex_token_iterator end;
-                    std::vector<std::string> sorted_pathnames;
-                    if(!pre_adfg.empty()){
-                        sorted_pathnames = std::get<3>(pre_adfg.at(pre_adfg_pathname));
-                    }
+                    const std::vector<std::string>& sorted_pathnames = pre_adfg.sorted_pathnames;
                 
                 /** TODO: check adfg to find out the machines!! */
                 for (const auto& okv: outputs) {
@@ -161,10 +158,7 @@ void DefaultOffCriticalDataPathObserver::operator() (
                     pre_adfg_t pre_adfg = typed_ctxt->get_pre_adfg(pre_adfg_pathname);
                     std::regex rgx(",");
                     std::sregex_token_iterator end;
-                    std::vector<std::string> sorted_pathnames;
-                    if(!pre_adfg.empty()){
-                        sorted_pathnames = std::get<3>(pre_adfg.at(pre_adfg_pathname));
-                    }
+                    const std::vector<std::string>& sorted_pathnames = pre_adfg.sorted_pathnames;
                 
                 /** TODO: check adfg to find out the machines!! */
                 for (const auto& okv: outputs) {
