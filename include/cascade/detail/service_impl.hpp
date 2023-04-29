@@ -2251,7 +2251,6 @@ void CascadeContext<CascadeTypes...>::construct() {
             entry_pathname = dfg.sorted_pathnames[0];
             pre_adfg.sorted_pathnames = dfg.sorted_pathnames;
         }
-        dbg_default_warn("~~~~~ ABOUT to process pathname: {} ", entry_pathname);
         for(auto& vertex : dfg.vertices) {
             for(auto& edge : vertex.second.edges) {
                 register_prefixes(
@@ -2268,7 +2267,6 @@ void CascadeContext<CascadeTypes...>::construct() {
                         vertex.second.task_info.required_objects_pathnames,
                         edge.second);
             }
-            dbg_default_warn("~~~~~ Registered prefix {} ", vertex.second.pathname);
             pre_adfg.task_info_map.emplace(vertex.first, vertex.second.task_info);
             // add the model from task_info to the local model cache
             for(auto& model_info : vertex.second.task_info.models_info) {
@@ -2473,12 +2471,11 @@ void CascadeContext<CascadeTypes...>::tide_scheduler_workhorse(uint32_t worker_i
 /** Fire scheduler operation */
 template <typename... CascadeTypes>
 void CascadeContext<CascadeTypes...>::fire_scheduler(Action&& action,uint32_t worker_id) {
-    dbg_default_trace("-- -- -- -- -- fire_scheduler[{}] for action key: [{}]", worker_id, action.key_string);
+    dbg_default_trace("-- -- fire_scheduler[{}] for action key: [{}]", worker_id, action.key_string);
     std::string vertex_pathname = (action.key_string).substr(0, action.prefix_length);
     uint64_t before_scheduler_us = get_time_us(true);
     action.adfg = this->tide_scheduler(vertex_pathname);   // Note: remember to save adfg to objectWithStringKey at emit() 
     uint64_t after_scheduler_us = get_time_us(true);
-    dbg_default_trace("~~~ vertex_pathname: {}, scheduled adfg: {}, time[{}]us", vertex_pathname, action.adfg, after_scheduler_us - before_scheduler_us);  
     if(!action.adfg.empty()){
         ObjectWithStringKey* obj_ptr = reinterpret_cast<ObjectWithStringKey*>(action.value_ptrs.at(0).get());
         obj_ptr->adfg = action.adfg;
