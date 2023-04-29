@@ -2476,6 +2476,7 @@ void CascadeContext<CascadeTypes...>::fire_scheduler(Action&& action,uint32_t wo
     uint64_t before_scheduler_us = get_time_us(true);
     action.adfg = this->tide_scheduler(vertex_pathname);   // Note: remember to save adfg to objectWithStringKey at emit() 
     uint64_t after_scheduler_us = get_time_us(true);
+    dbg_default_trace("~~~ vertex_pathname: {}, scheduled adfg: {}, time[{}]us", vertex_pathname, action.adfg, after_scheduler_us - before_scheduler_us);
     if(!action.adfg.empty()){
         ObjectWithStringKey* obj_ptr = reinterpret_cast<ObjectWithStringKey*>(action.value_ptrs.at(0).get());
         obj_ptr->adfg = action.adfg;
@@ -3063,7 +3064,7 @@ std::string CascadeContext<CascadeTypes...>::tide_scheduler(std::string entry_pr
                     model_fetch_time += host_to_GPU_delay(model_info.model_size);
                 }
             }
-            cur_earliest_start_time = std::max(earliest_available_times[cur_worker], earliest_start_time) + model_fetch_time;
+            cur_earliest_start_time = std::max(earliest_available_times[cur_worker], cur_earliest_start_time) + model_fetch_time;
             if(cur_earliest_start_time < earliest_start_time){
                 earliest_start_time = cur_earliest_start_time;
                 selected_worker_id = cur_worker;
