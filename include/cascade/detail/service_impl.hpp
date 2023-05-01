@@ -2243,7 +2243,7 @@ void CascadeContext<CascadeTypes...>::construct() {
     // TODO: implement the control plane.
     user_defined_logic_manager = UserDefinedLogicManager<CascadeTypes...>::create(this);
     auto dfgs = DataFlowGraph::get_data_flow_graphs();
-    std::unordered_map<uint32_t, DataFlowGraph::MLModelInfo> _models_info_cache;
+    std::unordered_map<std::string, std::vector<DataFlowGraph::MLModelInfo>> _models_info_cache;
     for(auto& dfg : dfgs) {
         pre_adfg_t pre_adfg;
         std::string entry_pathname;
@@ -2269,8 +2269,11 @@ void CascadeContext<CascadeTypes...>::construct() {
             }
             pre_adfg.task_info_map.emplace(vertex.first, vertex.second.task_info);
             // add the model from task_info to the local model cache
-            for(auto& model_info : vertex.second.task_info.models_info) {
-                _models_info_cache.emplace(model_info.model_id, model_info);
+            if (_models_info_cache.find(vertex.second.pathname) == _models_info_cache.end()) {
+                _models_info_cache[vertex.second.pathname] = {};
+                for(auto& model_info : vertex.second.task_info.models_info) {
+                    _models_info_cache[vertex.second.pathname].emplace_back(model_info);
+                }
             }
         }
         if (!entry_pathname.empty()){
@@ -2972,21 +2975,16 @@ bool CascadeContext<CascadeTypes...>::check_if_model_in_gpu(node_id_t node_id, u
 }
 
 template <typename... CascadeTypes>
-DataFlowGraph::MLModelInfo CascadeContext<CascadeTypes...>::get_model_info(uint32_t model_id){
+const std::vector<DataFlowGraph::MLModelInfo>& CascadeContext<CascadeTypes...>::get_required_models_info(std::string pathname){
     std::shared_lock rlck(this->models_info_cache_mutex);
-    return this->models_info_cache[model_id];
+    return this->models_info_cache[pathname];
 }
 
-template <typename... CascadeTypes>
-void CascadeContext<CascadeTypes...>::update_local_info_model_evict(uint32_t model_id){
-    std::unique_lock wlck(this->local_cached_models_info_mutex);
-    this->local_cached_models_info.erase(model_id);
-}
 
 template <typename... CascadeTypes>
-void CascadeContext<CascadeTypes...>::update_local_info_model_fetch(uint32_t model_id){
+void CascadeContext<CascadeTypes...>::update_local_model_info(std::set<uint32_t> new_cached_models){
     std::unique_lock wlck(this->local_cached_models_info_mutex);
-    this->local_cached_models_info.emplace(model_id);
+    this->local_cached_models_info = new_cached_models;
 }
 
 template <typename... CascadeTypes>

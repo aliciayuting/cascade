@@ -135,6 +135,9 @@ public:
     struct MLModelInfo{
         int32_t model_id = -1;
         uint32_t model_size = 0; // in KB
+        bool operator==(const MLModelInfo& other) const {
+            return model_id == other.model_id;
+        }
     };
     
     struct TaskInfo{

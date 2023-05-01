@@ -1783,7 +1783,10 @@ namespace cascade {
         std::unordered_map<std::string, pre_adfg_t> pre_adfg_dependencies;
         mutable std::shared_mutex      pre_adfg_dependencies_mutex;
 
-        std::unordered_map<uint32_t, DataFlowGraph::MLModelInfo> models_info_cache;
+        /** models information related to the pathname
+         * mapping between {pathname of the dfg -> vector of models info that this vertex use}
+        */
+        std::unordered_map<std::string, std::vector<DataFlowGraph::MLModelInfo>> models_info_cache;
         mutable std::shared_mutex      models_info_cache_mutex;
 
         std::atomic<uint64_t>  local_queue_wait_time;
@@ -1992,23 +1995,17 @@ namespace cascade {
         bool check_if_model_in_gpu(node_id_t node_id, uint32_t model_id);
 
         /**
-         * Helper function to get the model info cached locally
-         * @param  model_id the model_id to find its MLModelInfo
+         * Helper function to get the required_models for the pathname
+         * @param  pathname the model_id related to the pathname
          * @return MLModelInfo 
         */
-       DataFlowGraph::MLModelInfo get_model_info(uint32_t model_id);
+        const std::vector<DataFlowGraph::MLModelInfo>& get_required_models_info(std::string pathname);
 
         /**
          * update group cached_models_info information in derechoSST, 
-         * when there is local eviction to GPU memory on this node.
+         * when there is local model fetching or eviction to GPU memory on this node.
         */
-        void update_local_info_model_evict(uint32_t model_ids);
-
-        /**
-         * update group cached_models_info information in derechoSST, 
-         * when there is local eviction to GPU memory on this node.
-        */
-        void update_local_info_model_fetch(uint32_t model_ids);
+        void update_local_model_info(std::set<uint32_t> new_cached_models);
         
         /**
          * send local_cached_models_info to all nodes in the group
