@@ -1636,7 +1636,7 @@ namespace cascade {
          * Send the local updated cached_models_info to all nodes in the group, via derechoSST
          * @param  _local_group_models     local cached_models_info information from CascadeContext 
         */
-        void send_local_cached_models_info_to_group(const std::set<uint32_t>& _local_group_models);
+        void send_local_cached_models_info_to_group(std::set<uint32_t> _local_group_models);
 
         /**
          * Send the local updated queue_wait_time to all nodes in the group, via derechoSST
@@ -1792,6 +1792,7 @@ namespace cascade {
         std::atomic<uint64_t>  local_queue_wait_time;
         std::set<uint32_t>  local_cached_models_info;
         mutable std::shared_mutex local_cached_models_info_mutex;
+        std::atomic<bool>         local_cached_models_info_updated;
 
         std::unordered_map<node_id_t, std::set<uint32_t>>  group_cached_models_info; // include all other nodes info, beside this node
         std::unordered_map<node_id_t, uint64_t>            group_queue_wait_times;// include all other nodes info, beside this node
@@ -2002,7 +2003,7 @@ namespace cascade {
         const std::vector<DataFlowGraph::MLModelInfo>& get_required_models_info(std::string pathname);
 
         /**
-         * update group cached_models_info information in derechoSST, 
+         * update local_cached_models_info, called
          * when there is local model fetching or eviction to GPU memory on this node.
         */
         void update_local_model_info(std::set<uint32_t> new_cached_models);

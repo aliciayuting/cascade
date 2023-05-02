@@ -2183,7 +2183,7 @@ void ServiceClient<CascadeTypes...>::get_updated_group_queue_wait_times(std::uno
 }
 
 template <typename... CascadeTypes>
-void ServiceClient<CascadeTypes...>::send_local_cached_models_info_to_group(const std::set<uint32_t>& _local_group_models) {
+void ServiceClient<CascadeTypes...>::send_local_cached_models_info_to_group(std::set<uint32_t> _local_group_models) {
     uint64_t encoded_models = 0;
     for(int k = 0; k < 64; ++k) {
         if(_local_group_models.find(k) != _local_group_models.end()) {
@@ -2271,9 +2271,9 @@ void CascadeContext<CascadeTypes...>::construct() {
             // add the model from task_info to the local model cache
             if (_models_info_cache.find(vertex.second.pathname) == _models_info_cache.end()) {
                 _models_info_cache[vertex.second.pathname] = {};
-                for(auto& model_info : vertex.second.task_info.models_info) {
-                    _models_info_cache[vertex.second.pathname].emplace_back(model_info);
-                }
+            }
+            for(auto& model_info : vertex.second.task_info.models_info) {
+                _models_info_cache[vertex.second.pathname].emplace_back(model_info);
             }
         }
         if (!entry_pathname.empty()){
@@ -2466,6 +2466,9 @@ void CascadeContext<CascadeTypes...>::tide_scheduler_workhorse(uint32_t worker_i
                 if(!action) break;  
                 this->fire_scheduler(std::move(action), worker_id);
             } while(true);
+        }
+        if(local_cached_models_info_updated){
+            this->send_local_cached_models_info();
         }
     }
     dbg_default_trace("Cascade context workhorse[{}] finished normally.", static_cast<uint64_t>(gettid()));
@@ -2976,6 +2979,9 @@ bool CascadeContext<CascadeTypes...>::check_if_model_in_gpu(node_id_t node_id, u
 
 template <typename... CascadeTypes>
 const std::vector<DataFlowGraph::MLModelInfo>& CascadeContext<CascadeTypes...>::get_required_models_info(std::string pathname){
+    if(pathname.back() != PATH_SEPARATOR){
+        pathname += PATH_SEPARATOR;
+    }
     std::shared_lock rlck(this->models_info_cache_mutex);
     return this->models_info_cache[pathname];
 }
@@ -2985,12 +2991,14 @@ template <typename... CascadeTypes>
 void CascadeContext<CascadeTypes...>::update_local_model_info(std::set<uint32_t> new_cached_models){
     std::unique_lock wlck(this->local_cached_models_info_mutex);
     this->local_cached_models_info = new_cached_models;
+    this->local_cached_models_info_updated = true;
 }
 
 template <typename... CascadeTypes>
 void CascadeContext<CascadeTypes...>::send_local_cached_models_info(){
     std::shared_lock<std::shared_mutex> rlck(this->local_cached_models_info_mutex);
     this->get_service_client_ref().send_local_cached_models_info_to_group(this->local_cached_models_info);
+    this->local_cached_models_info_updated = false;
 }
 
 template <typename... CascadeTypes>
