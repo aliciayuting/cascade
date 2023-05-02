@@ -76,7 +76,7 @@ DataFlowGraph::DataFlowGraph(const json& dfg_conf):
                 model_info.model_id = dfg_model_info[DFG_JSON_MODEL_ID].get<uint32_t>();
                 // model size in KB
                 model_info.model_size = dfg_model_info[DFG_JSON_MODEL_SIZE].get<uint32_t>();
-                models_info.emplace_back(model_info);
+                task_info.models_info.emplace_back(model_info);
             }
         } 
         // input_size in KB

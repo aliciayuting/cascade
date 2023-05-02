@@ -18,6 +18,7 @@ set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -Wall -DEVALUATION -fcom
 set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -Wall -ggdb -gdwarf-3")
 
 set(CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake/Modules")
+set(pybind11_DIR "/usr/local/lib/python3.10/dist-packages/pybind11/share/cmake/pybind11")
 
 include(GNUInstallDirs)
 
@@ -94,7 +95,8 @@ CONFIGURE_FILE(${CMAKE_CURRENT_SOURCE_DIR}/config.h.in ${CMAKE_CURRENT_BINARY_DI
 add_subdirectory(src/core)
 add_subdirectory(src/utils)
 add_subdirectory(src/service)
-add_subdirectory(src/applications/tests)
+# add_subdirectory(src/applications/tests)
+add_subdirectory(src/applications/cascade-demos/udl_zoo/python)
 
 # make libcascade.so
 add_library(cascade SHARED

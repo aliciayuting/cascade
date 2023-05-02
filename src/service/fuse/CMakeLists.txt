@@ -23,10 +23,5 @@ if (${HAS_FUSE})
 	        	${CMAKE_CURRENT_SOURCE_DIR}/util.py
     		)
 
-    install(FILES testfuse.py util.py
-            TYPE BIN
-            PERMISSIONS OWNER_WRITE OWNER_READ GROUP_READ WORLD_READ OWNER_EXECUTE GROUP_EXECUTE WORLD_EXECUTE
-	    )
-
 endif()
 
