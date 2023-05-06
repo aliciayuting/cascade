@@ -2,7 +2,7 @@
 set -eu
 export TMPDIR=/var/tmp
 WORKPATH=`mktemp -d`
-INSTALL_PREFIX="/usr/local"
+INSTALL_PREFIX="/home/yy354/opt-dev"
 if [[ $# -gt 0 ]]; then
     INSTALL_PREFIX=$1
 fi
