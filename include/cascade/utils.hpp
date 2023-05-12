@@ -473,7 +473,6 @@ inline uint64_t CPU_to_CPU_delay(uint64_t object_size){
           delay = (object_size / throughput) + FIXED_COST_GROUP_FORMATION;
      }
      return round_double(delay);
-     
 }
 
 /**

@@ -134,7 +134,7 @@ public:
      * Maybe should split MLModel descriptor from dfg file and include more information*/
     struct MLModelInfo{
         int32_t model_id = -1;
-        uint32_t model_size = 0; // in KB
+        uint64_t model_size = 0; // in KB
         bool operator==(const MLModelInfo& other) const {
             return model_id == other.model_id;
         }
@@ -221,7 +221,7 @@ public:
             }
             out << "\n\t\t-models_info: ";
             for (auto& m:task_info.models_info){
-                out << m.model_id << ":" << m.model_size << "KB, ";
+                out << "(" << m.model_id << "," << m.model_size << "KB), ";
             }
             out << "\n\t\t-output_size: " << task_info.output_size << "\n";
             out << "\n\t\t-expected_execution_timeus: " << task_info.expected_execution_timeus << "\n";
