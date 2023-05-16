@@ -96,7 +96,7 @@ add_subdirectory(src/core)
 add_subdirectory(src/utils)
 add_subdirectory(src/service)
 # add_subdirectory(src/applications/tests)
-#add_subdirectory(src/applications/cascade-demo/udl_zoo/python)
+#add_subdirectory(src/applications/tide_deployment)
 
 # make libcascade.so
 add_library(cascade SHARED
