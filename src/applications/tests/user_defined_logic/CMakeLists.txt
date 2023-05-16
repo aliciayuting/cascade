@@ -2,15 +2,40 @@ cmake_minimum_required(VERSION 3.10.0)
 set(CMAKE_DISABLE_SOURCE_CHANGES ON)
 set(CMAKE_DISABLE_IN_SOURCE_BUILD ON)
 
-add_library(console_printer_udl SHARED console_printer_udl.cpp)
-target_include_directories(console_printer_udl PRIVATE
+add_library(console_printer_one_udl SHARED console_printer_one_udl.cpp)
+target_include_directories(console_printer_one_udl PRIVATE
     $<BUILD_INTERFACE:${CMAKE_BINARY_DIR}/include>
     $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/include>
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
     $<BUILD_INTERFACE:${CMAKE_BINARY_DIR}>
 )
-add_dependencies(console_printer_udl cascade)
-add_custom_command(TARGET console_printer_udl POST_BUILD
+
+add_library(console_printer_two_udl SHARED console_printer_two_udl.cpp)
+target_include_directories(console_printer_two_udl PRIVATE
+    $<BUILD_INTERFACE:${CMAKE_BINARY_DIR}/include>
+    $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/include>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
+    $<BUILD_INTERFACE:${CMAKE_BINARY_DIR}>
+)
+
+add_library(console_printer_three_udl SHARED console_printer_three_udl.cpp)
+target_include_directories(console_printer_three_udl PRIVATE
+    $<BUILD_INTERFACE:${CMAKE_BINARY_DIR}/include>
+    $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/include>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
+    $<BUILD_INTERFACE:${CMAKE_BINARY_DIR}>
+)
+
+add_library(console_printer_four_udl SHARED console_printer_four_udl.cpp)
+target_include_directories(console_printer_four_udl PRIVATE
+    $<BUILD_INTERFACE:${CMAKE_BINARY_DIR}/include>
+    $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/include>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
+    $<BUILD_INTERFACE:${CMAKE_BINARY_DIR}>
+)
+
+add_dependencies(console_printer_one_udl cascade)
+add_custom_command(TARGET console_printer_one_udl POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_CURRENT_SOURCE_DIR}/console_printer_cfg
     ${CMAKE_CURRENT_BINARY_DIR}/console_printer_cfg
     COMMAND ln -sf ${CMAKE_CURRENT_BINARY_DIR}/console_printer_cfg/run.sh.tmp

@@ -4,15 +4,68 @@
         "desc": "console_printer DFG",
         "graph": [
             {
-                "pathname": "/console_printer",
+                "pathname": "/console_printer1",
                 "shard_dispatcher_list": ["one"],
                 "user_defined_logic_list": ["48e60f7c-8500-11eb-8755-0242ac110002"],
-                "required_models_list": [0],
-                "required_models_sizes_list": [0],
-                "output_size_list":[0],
-                "expected_execution_timeus_list": [1],
-                "destinations": [{}],
+                "user_defined_logic_stateful": ["singlethreaded"],
+                "destinations": [{"/console_printer2" : "trigger_put" , "/console_printer3" : "trigger_put" }],
+                "required_models_list": [{
+                        "model_id":0,
+                        "model_size":10
+                    } 
+                ],
+                "input_size":10,
+                "output_size":20,
+                "expected_execution_timeus":1,
                 "required_objects_pathnames":[]
+            },
+            {
+                "pathname": "/console_printer2",
+                "shard_dispatcher_list": ["one"],
+                "user_defined_logic_list": ["49a12a9b-7400-11ab-8490-0242ac110002"],
+                "user_defined_logic_stateful_list": ["singlethreaded"],
+                "destinations": [{"/console_printer4" : "trigger_put" }],
+                "required_models_list": [{
+                        "model_id":1,
+                        "model_size":10
+                    }
+                ],
+                "input_size":20,
+                "output_size":10,
+                "expected_execution_timeus":1,
+                "required_objects_pathnames":["/console_printer1"]
+            },
+            {
+                "pathname": "/console_printer3",
+                "shard_dispatcher_list": ["one"],
+                "user_defined_logic_list": ["30b9019b-7330-33ab-8330-0242ac110002"],
+                "user_defined_logic_stateful_list": ["singlethreaded"],
+                "destinations": [{"/console_printer4" : "trigger_put" }],
+                "required_models_list": [{
+                        "model_id":2,
+                        "model_size":10
+                    }
+                ],
+                "input_size":20,
+                "output_size":30,
+                "expected_execution_timeus":1,
+                "required_objects_pathnames":["/console_printer1"]
+            },
+            {
+                "pathname": "/console_printer4",
+                "shard_dispatcher_list": ["one"],
+                "user_defined_logic_list": ["40c0422a-7440-44ab-8440-0242ac110002"],
+                "user_defined_logic_stateful_list": ["singlethreaded"],
+                "destinations": [{}],
+                "required_models_list":[ {
+                        "model_id":2,
+                        "model_size":10
+                    }
+                ],
+                "input_size":20,
+                "output_size":30,
+                "expected_execution_timeus":1,
+                "required_objects_pathnames":["/console_printer2", "/console_printer3"]
             }
         ]
     }
