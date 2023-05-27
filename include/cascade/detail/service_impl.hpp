@@ -2265,7 +2265,8 @@ void CascadeContext<CascadeTypes...>::construct() {
                                 edge.first,  // UUID
                                 vertex.second.configurations.at(edge.first)),
                         vertex.second.task_info.required_objects_pathnames,
-                        edge.second);
+                        edge.second,
+                        vertex.second.task_info.expected_execution_timeus);
             }
             pre_adfg.task_info_map.emplace(vertex.first, vertex.second.task_info);
             // add the model from task_info to the local model cache
@@ -2436,7 +2437,7 @@ void CascadeContext<CascadeTypes...>::workhorse(uint32_t worker_id, struct actio
         // waiting for an action
         Action action = std::move(aq.action_buffer_dequeue(is_running));
         /** TODO: use expected run_time instead of 1. */
-        this->local_queue_wait_time --;
+        this->local_queue_wait_time -= action.expected_execution_timeus;
         this->get_service_client_ref().send_local_queue_wait_time(this->local_queue_wait_time);
         action.fire(this,worker_id);
         if(!is_running) {
@@ -2661,14 +2662,15 @@ void CascadeContext<CascadeTypes...>::register_prefixes(
         const std::string& user_defined_logic_id,
         const std::shared_ptr<OffCriticalDataPathObserver>& ocdpo_ptr,
         const std::vector<std::string>& required_object_pathnames,
-        const std::unordered_map<std::string, bool>& outputs) {
+        const std::unordered_map<std::string, bool>& outputs,
+        const uint64_t expected_execution_timeus) {
     for(const auto& prefix : prefixes) {
         prefix_registry_ptr->atomically_modify(
                 prefix,
 #ifdef HAS_STATEFUL_UDL_SUPPORT
-                [&prefix, &shard_dispatcher, &stateful, &hook, &user_defined_logic_id, &ocdpo_ptr, &required_object_pathnames, &outputs](const std::shared_ptr<prefix_entry_t>& entry) {
+                [&prefix, &shard_dispatcher, &stateful, &hook, &user_defined_logic_id, &ocdpo_ptr, &required_object_pathnames, &outputs, &expected_execution_timeus](const std::shared_ptr<prefix_entry_t>& entry) {
 #else
-                [&prefix, &shard_dispatcher, &hook, &user_defined_logic_id, &ocdpo_ptr, &required_object_pathnames, &outputs](const std::shared_ptr<prefix_entry_t>& entry) {
+                [&prefix, &shard_dispatcher, &hook, &user_defined_logic_id, &ocdpo_ptr, &required_object_pathnames, &outputs, &expected_execution_timeus](const std::shared_ptr<prefix_entry_t>& entry) {
 #endif
                     std::shared_ptr<prefix_entry_t> new_entry;
                     if(entry) {
@@ -2678,9 +2680,9 @@ void CascadeContext<CascadeTypes...>::register_prefixes(
                     }
                     if(new_entry->find(user_defined_logic_id) == new_entry->end()) {
 #ifdef HAS_STATEFUL_UDL_SUPPORT
-                        new_entry->emplace(user_defined_logic_id, std::tuple{shard_dispatcher, stateful, hook, ocdpo_ptr, required_object_pathnames, outputs});
+                        new_entry->emplace(user_defined_logic_id, std::tuple{shard_dispatcher, stateful, hook, ocdpo_ptr, required_object_pathnames, outputs, expected_execution_timeus});
 #else
-                        new_entry->emplace(user_defined_logic_id, std::tuple{shard_dispatcher, hook, ocdpo_ptr, required_object_pathnames, outputs});
+                        new_entry->emplace(user_defined_logic_id, std::tuple{shard_dispatcher, hook, ocdpo_ptr, required_object_pathnames, outputs, expected_execution_timeus});
 #endif
                     } else {
 #ifdef HAS_STATEFUL_UDL_SUPPORT
@@ -2835,9 +2837,11 @@ void CascadeContext<CascadeTypes...>::find_handlers_and_local_post(ObjectWithStr
 #ifdef HAS_STATEFUL_UDL_SUPPORT
                             std::get<4>(handler.second),  // required object pathnames
                             std::get<5>(handler.second),  // outputs
+                            std::get<6>(handler.second),  // expected_execution_timeus
 #else
                             std::get<3>(handler.second),  // required object pathnames
                             std::get<4>(handler.second),  // outputs
+                            std::get<5>(handler.second),  // expected_execution_timeus
 #endif
                     std::get<1>(handler.second),  // stateful
                     is_trigger);
@@ -2922,7 +2926,7 @@ bool CascadeContext<CascadeTypes...>::post(Action&& action, bool is_trigger) {
     * 1. use expected run_time instead of 1
     * 2. for task waiting for dependencies, only update wait_time  once .
     */
-    this->local_queue_wait_time ++;
+    this->local_queue_wait_time += action.expected_execution_timeus;
     this->get_service_client_ref().send_local_queue_wait_time(this->local_queue_wait_time);
     dbg_default_trace("Action posted to Cascade context@{:p}.", static_cast<void*>(this));
     return true;

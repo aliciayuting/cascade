@@ -146,6 +146,7 @@ namespace cascade {
         std::vector<std::shared_ptr<mutils::ByteRepresentable>>     value_ptrs;
         std::vector<std::string>        required_object_pathnames;
         std::unordered_map<std::string,bool>           outputs;
+        uint64_t                        expected_execution_timeus;
         DataFlowGraph::Statefulness     stateful;
         bool                            is_trigger;
         /**
@@ -162,6 +163,7 @@ namespace cascade {
             value_ptrs(std::move(other.value_ptrs)),
             required_object_pathnames(other.required_object_pathnames),
             outputs(std::move(other.outputs)),
+            expected_execution_timeus(other.expected_execution_timeus),
             stateful(other.stateful),
             is_trigger(other.is_trigger) {}
         /**
@@ -173,6 +175,7 @@ namespace cascade {
          * @param   _value_ptr
          * @param   _required_object_pathnames
          * @param   _outputs
+         * @param   _expected_execution_timeus
          * @param   _stateful
          * @param   _is_trigger
          */
@@ -185,6 +188,7 @@ namespace cascade {
                const std::shared_ptr<mutils::ByteRepresentable>&    _value_ptr = nullptr,
                const std::vector<std::string>&    _required_object_pathnames = {},
                const std::unordered_map<std::string,bool>           _outputs = {},
+               const uint64_t               _expected_execution_timeus = 0,
                const DataFlowGraph::Statefulness _stateful = DataFlowGraph::Statefulness::STATELESS,
                const bool                   _is_trigger = true):
             sender(_sender),
@@ -195,6 +199,7 @@ namespace cascade {
             ocdpo_ptr(_ocdpo_ptr),
             required_object_pathnames(_required_object_pathnames),
             outputs(_outputs),
+            expected_execution_timeus(_expected_execution_timeus),
             stateful(_stateful),
             is_trigger(_is_trigger) {
                 if(_value_ptr){
@@ -1716,7 +1721,8 @@ namespace cascade {
                         DataFlowGraph::VertexHook,                    // hook
                         std::shared_ptr<OffCriticalDataPathObserver>, // ocdpo
                         std::vector<std::string>,                     // required object pathnames
-                        std::unordered_map<std::string,bool>          // output map{prefix->bool}
+                        std::unordered_map<std::string,bool>,         // output map{prefix->bool}
+                        uint64_t                                      // expected_execution_timeus
                     >
                 >;
     using match_results_t = std::unordered_map<std::string,prefix_entry_t>;
@@ -1905,6 +1911,7 @@ namespace cascade {
          * @param required_object_pathnames - the required object pathnames, from dependency DAG joining node
          * @param outputs               - the outputs are a map from another prefix to put type (true for trigger put,
          *                                false for put).
+         * @param expected_execution_timeus - the expected execution time in microseconds
          */
         virtual void register_prefixes(const std::unordered_set<std::string>& prefixes,
                                        const DataFlowGraph::VertexShardDispatcher shard_dispatcher,
@@ -1915,7 +1922,8 @@ namespace cascade {
                                        const std::string& user_defined_logic_id,
                                        const std::shared_ptr<OffCriticalDataPathObserver>& ocdpo_ptr,
                                        const std::vector<std::string>& required_object_pathnames,
-                                       const std::unordered_map<std::string,bool>& outputs);
+                                       const std::unordered_map<std::string,bool>& outputs,
+                                       const uint64_t expected_execution_timeus);
         /**
          * Unregister a set of prefixes
          *

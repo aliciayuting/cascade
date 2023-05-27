@@ -137,9 +137,11 @@ class CascadeServiceCDPO : public CriticalDataPathObserver<CascadeType> {
 #ifdef HAS_STATEFUL_UDL_SUPPORT
                             std::get<4>(handler.second),  // required object pathnames
                             std::get<5>(handler.second),  // outputs
+                            std::get<6>(handler.second),  // expected_execution_timeus
 #else
                             std::get<3>(handler.second),  // required object pathnames
                             std::get<4>(handler.second),  // outputs
+                            std::get<5>(handler.second),  // expected_execution_timeus
 #endif
                     std::get<1>(handler.second),  // stateful
                     is_trigger);
