@@ -3034,7 +3034,11 @@ std::string CascadeContext<CascadeTypes...>::tide_scheduler(std::string entry_pr
      std::unordered_map<std::string, std::pair<node_id_t,uint64_t>> allocated_tasks_info;
      std::vector<node_id_t> workers_set = this->get_service_client_ref().get_members();
      // remove node_id 0 from worker_set, since it is metadata server
-     workers_set.erase(std::remove(workers_set.begin(), workers_set.end(), 0), workers_set.end());
+    /** This require node0 to have both metadata service and at least one of VCSS/PCSS/TCSS shard, so that it can process trigger_put. 
+      * Otherwise, uncomment below line.
+      * TODO: change this hard-coded to config/auto condition phrase
+      */
+    //  workers_set.erase(std::remove(workers_set.begin(), workers_set.end(), 0), workers_set.end());
      pre_adfg_t pre_adfg = this->get_pre_adfg(entry_prefix);
      if(pre_adfg.sorted_pathnames.empty()){
             dbg_default_error("CascadeContext::tide_scheduler pre_adfg is empty");
