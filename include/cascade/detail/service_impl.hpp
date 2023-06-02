@@ -2484,6 +2484,7 @@ void CascadeContext<CascadeTypes...>::fire_scheduler(Action&& action,uint32_t wo
     action.adfg = this->tide_scheduler(vertex_pathname);   // Note: remember to save adfg to objectWithStringKey at emit() 
     uint64_t after_scheduler_us = get_time_us(true);
     dbg_default_trace("~~~ vertex_pathname: {}, scheduled adfg: {}, time[{}]us", vertex_pathname, action.adfg, after_scheduler_us - before_scheduler_us);
+    std::cout << "---" << vertex_pathname << ":(" << action.adfg << ")" << std::endl;
     if(!action.adfg.empty()){
         ObjectWithStringKey* obj_ptr = reinterpret_cast<ObjectWithStringKey*>(action.value_ptrs.at(0).get());
         obj_ptr->adfg = action.adfg;
