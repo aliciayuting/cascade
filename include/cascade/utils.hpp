@@ -451,8 +451,8 @@ inline uint64_t round_double(double _d){
  * @param object_size     the size of the object to move, in KB
 */
 inline uint64_t host_to_GPU_delay(uint64_t object_size){
-     double throughput = 4.7 * (1 << 20) / 1000.0;
-     double delay = (1000.0 * object_size / throughput) + FIXED_COST_GROUP_FORMATION;
+     double throughput = 9.7 * 1048.58 / 1000.0;
+     double delay = (1.0 * object_size / throughput) + FIXED_COST_GROUP_FORMATION;
      return round_double(delay);
 }
 
@@ -469,7 +469,7 @@ inline uint64_t CPU_to_CPU_delay(uint64_t object_size){
           throughput = (3 + object_size * 2) * (1 << 20) / 1000.0;
           delay = (object_size / throughput) + FIXED_COST_GROUP_FORMATION;
      }else{
-          throughput = 12 * (1 << 20) / 1000.0;
+          throughput = 12 * 1048.58 / 1000.0;
           delay = (object_size / throughput) + FIXED_COST_GROUP_FORMATION;
      }
      return round_double(delay);
@@ -480,7 +480,7 @@ inline uint64_t CPU_to_CPU_delay(uint64_t object_size){
  * @param object_size     the size of the object to move, in KB
 */
 inline uint64_t GPU_to_host_delay(uint64_t object_size){
-     double throughput = 4.7 * (1 << 20) / 1000.0;
+     double throughput = 4.7 * 1048.58 / 1000.0;
      double delay = (object_size / throughput) + FIXED_COST_GROUP_FORMATION;
      return round_double(delay);
 }
