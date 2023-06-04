@@ -3085,7 +3085,7 @@ std::string CascadeContext<CascadeTypes...>::tide_scheduler(std::string entry_pr
                 earliest_start_time = cur_earliest_start_time;
                 selected_worker_id = cur_worker;
             }
-            std::cout << "-- (worker " << cur_worker << " earliest start time: " << cur_earliest_start_time<< "),";
+            std::cout << "(n " << cur_worker << ", est: " << cur_earliest_start_time<< "),";
         }
         if(selected_worker_id == INVALID_NODE_ID){
             dbg_default_error("CascadeContext::tide_scheduler selected_worker_id == -1");
