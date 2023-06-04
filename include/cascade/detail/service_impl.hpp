@@ -3056,6 +3056,7 @@ std::string CascadeContext<CascadeTypes...>::tide_scheduler(std::string entry_pr
         auto& task_info = pre_adfg.task_info_map[task_name];
         // 0. PRE-COMPUTE (used later by 2. case1) get the earliest start time, suppose all preq_tasks need to transfer data
         node_id_t selected_worker_id = INVALID_NODE_ID;
+        std::cout << "- task:" << task_name << " allocation: \n";
 	    uint64_t earliest_start_time = UINT64_MAX;
         for(const auto& cur_worker: workers_set){
             uint64_t cur_earliest_start_time = cur_us;
@@ -3084,20 +3085,16 @@ std::string CascadeContext<CascadeTypes...>::tide_scheduler(std::string entry_pr
                 earliest_start_time = cur_earliest_start_time;
                 selected_worker_id = cur_worker;
             }
+            std::cout << "-- (worker " << cur_worker << " earliest start time: " << cur_earliest_start_time<< "),";
         }
         if(selected_worker_id == INVALID_NODE_ID){
             dbg_default_error("CascadeContext::tide_scheduler selected_worker_id == -1");
             return "";
         }
+        std::cout << std::endl;
         uint64_t earliest_finish_time = earliest_start_time + GPU_to_GPU_delay(task_info.input_size) + task_info.expected_execution_timeus;
         allocated_tasks_info[task_name] = {selected_worker_id, earliest_finish_time};
         earliest_available_times[selected_worker_id] = earliest_finish_time;
-        std::cout << "- task:" << task_name << " allocation: \n";
-        for(auto& worker_time_pair : earliest_available_times){
-            // print out worker available time
-            std::cout << "-- (worker " << worker_time_pair.first << " available time: " << worker_time_pair.second << "),";
-        }
-        std::cout << std::endl;
     }
     std::string allocated_machines;
     for(auto& pathname: sorted_pathnames){
