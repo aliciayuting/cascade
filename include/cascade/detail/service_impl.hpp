@@ -3092,6 +3092,12 @@ std::string CascadeContext<CascadeTypes...>::tide_scheduler(std::string entry_pr
         uint64_t earliest_finish_time = earliest_start_time + GPU_to_GPU_delay(task_info.input_size) + task_info.expected_execution_timeus;
         allocated_tasks_info[task_name] = {selected_worker_id, earliest_finish_time};
         earliest_available_times[selected_worker_id] = earliest_finish_time;
+        std::cout << "- task:" << task_name << " allocation: \n";
+        for(auto& worker_time_pair : earliest_available_times){
+            // print out worker available time
+            std::cout << "-- (worker " << worker_time_pair.first << " available time: " << worker_time_pair.second << "),";
+        }
+        std::cout << std::endl;
     }
     std::string allocated_machines;
     for(auto& pathname: sorted_pathnames){
