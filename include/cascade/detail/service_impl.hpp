@@ -2973,7 +2973,7 @@ uint64_t CascadeContext<CascadeTypes...>::check_queue_wait_time(node_id_t node_i
 
 template <typename... CascadeTypes>
 bool CascadeContext<CascadeTypes...>::check_if_model_in_gpu(node_id_t node_id, uint32_t model_id) {
-    if(node_id ==  this->get_service_client().my_node_id()){
+    if(node_id ==  this->get_service_client_ref().my_node_id()){
         std::shared_lock rlck(this->local_cached_models_info_mutex);
         bool exist_model_in_gpu = this->local_cached_models_info.find(model_id) != this->local_cached_models_info.end();
         return exist_model_in_gpu;
