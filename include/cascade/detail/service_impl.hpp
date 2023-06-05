@@ -2951,6 +2951,9 @@ size_t CascadeContext<CascadeTypes...>::stateless_action_queue_length_multicast(
 
 template <typename... CascadeTypes>
 uint64_t CascadeContext<CascadeTypes...>::check_queue_wait_time(node_id_t node_id) {
+    if (local_node_id == this->get_service_client_ref().get_my_id()){
+        return local_queue_wait_time.load();
+    }
     uint64_t cur_us = get_time_us(true);
     /** TODO: move this threshold to config, currently set it to every 1sec*/
     if(cur_us - last_group_queue_wait_times_update_timeus > 1000000) {
@@ -2970,6 +2973,11 @@ uint64_t CascadeContext<CascadeTypes...>::check_queue_wait_time(node_id_t node_i
 
 template <typename... CascadeTypes>
 bool CascadeContext<CascadeTypes...>::check_if_model_in_gpu(node_id_t node_id, uint32_t model_id) {
+    if(node_id ==  this->get_service_client().my_node_id()){
+        std::shared_lock rlck(this->local_cached_models_info_mutex);
+        bool exist_model_in_gpu = this->local_cached_models_info.find(model_id) != this->local_cached_models_info.end();
+        return exist_model_in_gpu;
+    }
     uint64_t cur_us = get_time_us(true);
     /** TODO: move this threshold to config, currently set it to every 10sec*/
     if(cur_us - last_group_cached_models_info_update_timeus > 10000000) {
