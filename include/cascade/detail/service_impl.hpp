@@ -2951,7 +2951,7 @@ size_t CascadeContext<CascadeTypes...>::stateless_action_queue_length_multicast(
 
 template <typename... CascadeTypes>
 uint64_t CascadeContext<CascadeTypes...>::check_queue_wait_time(node_id_t node_id) {
-    if (local_node_id == this->get_service_client_ref().get_my_id()){
+    if (node_id == this->get_service_client_ref().get_my_id()){
         return local_queue_wait_time.load();
     }
     uint64_t cur_us = get_time_us(true);
