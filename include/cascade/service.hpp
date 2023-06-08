@@ -1680,6 +1680,8 @@ namespace cascade {
     #define CASCADE_CONTEXT_CPU_CORES               "CASCADE/cpu_cores"
     #define CASCADE_CONTEXT_GPUS                    "CASCADE/gpus"
     #define CASCADE_CONTEXT_WORKER_CPU_AFFINITY     "CASCADE/worker_cpu_affinity"
+    #define LOAD_INFO_DISSEMINATION_RATE            "INFOSST/load_info_update_rate"
+    #define CACHE_INFO_DISSEMINATION_RATE           "INFOSST/cache_info_update_rate"
 
     /**
      * A class describing the resources available in the Cascade context.
