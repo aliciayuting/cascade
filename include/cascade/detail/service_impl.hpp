@@ -3075,7 +3075,7 @@ std::string CascadeContext<CascadeTypes...>::tide_scheduler(std::string entry_pr
                 auto& preq_task_info = pre_adfg.task_info_map[preq_task_name];
                 auto& alloc_info = allocated_tasks_info[preq_task_name];
                 uint64_t arrival_time = alloc_info.second;
-                if(cur_worker == alloc_info.first){
+                if(cur_worker != alloc_info.first){
                     arrival_time += CPU_to_CPU_delay(preq_task_info.output_size);
                 }
                 inputs_arrival_time = std::max(inputs_arrival_time, arrival_time);
@@ -3087,6 +3087,7 @@ std::string CascadeContext<CascadeTypes...>::tide_scheduler(std::string entry_pr
                     model_fetch_time += host_to_GPU_delay(model_info.model_size);
                 }
             }
+            /*** ALICIA TODO: take into account of allocations in this round */
             cur_earliest_start_time = std::max(earliest_available_times[cur_worker], cur_earliest_start_time) + model_fetch_time;
             if(cur_earliest_start_time < earliest_start_time){
                 earliest_start_time = cur_earliest_start_time;
