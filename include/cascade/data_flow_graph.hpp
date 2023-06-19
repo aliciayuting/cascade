@@ -147,6 +147,11 @@ public:
         uint32_t input_size = 0; 
         uint32_t output_size = 0;
         uint64_t expected_execution_timeus = 0;
+        // list of sorted verticies, from 0,..., total number of verticies in the dfg
+        // Preserving the priority according to the ranking. If there is an edge from vertex A -> vertex B, then idx(A)<idx(B) 
+        /** TODO:Follow from required_objects_path_names. This assumes all the udl in this vertex share the same rank. 
+        * make this to be map<std::string, std::vector<std::string>> udl_uuid->sorted_udls, */
+        std::vector<std::string> tasks_rankings_in_dfg; 
     };
 
     // the Hex UUID
@@ -225,15 +230,14 @@ public:
             }
             out << "\n\t\t-output_size: " << task_info.output_size << "\n";
             out << "\n\t\t-expected_execution_timeus: " << task_info.expected_execution_timeus << "\n";
+            out << "\t-ranked_pathnames:";
+            for (auto& pathname:task_info.tasks_rankings_in_dfg){
+                out << pathname << ",";
+            }
             return out.str();
         }
     };
     std::unordered_map<std::string,DataFlowGraphVertex> vertices;
-    // list of sorted verticies, from 0,..., total number of verticies in the dfg
-    // Preserving the priority according to dependencies. If there is an edge from vertex A -> vertex B, then idx(A)<idx(B) 
-    /** TODO:Follow from required_objects_path_names. This assumes all the udl in this vertex share the same rank. 
-     * make this to be map<std::string, std::vector<std::string>> udl_uuid->sorted_udls, */
-    std::vector<std::string> sorted_pathnames; 
     /**
      * Constructors
      */
@@ -241,6 +245,11 @@ public:
     DataFlowGraph(const json& dfg_conf);
     DataFlowGraph(const DataFlowGraph& other);
     DataFlowGraph(DataFlowGraph&& other);
+
+    /**
+     * Helper function for scheduler to run TIDE algorithm that rank the tasks based on their dependencies
+     */
+    std::vector<std::string> rank_tasks_in_dfg();
     /**
      * for debug
      */

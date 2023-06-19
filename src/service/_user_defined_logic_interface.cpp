@@ -40,16 +40,7 @@ void DefaultOffCriticalDataPathObserver::operator() (
                 uint64_t              message_id,
 #endif
                 const Blob& blob) {
-                    std::string pre_adfg_pathname = object_pool_pathname;
-                    if(object_pool_pathname.back() != PATH_SEPARATOR) {
-                        pre_adfg_pathname = object_pool_pathname + PATH_SEPARATOR;
-                    }
-                    pre_adfg_t pre_adfg = typed_ctxt->get_pre_adfg(pre_adfg_pathname);
-                    std::regex rgx(",");
-                    std::sregex_token_iterator end;
-                    const std::vector<std::string>& sorted_pathnames = pre_adfg.sorted_pathnames;
-                
-                /** TODO: check adfg to find out the machines!! */
+
                 for (const auto& okv: outputs) {
                     std::string prefix = okv.first;
                     while (!prefix.empty() && prefix.back() == PATH_SEPARATOR) prefix.pop_back();
@@ -58,41 +49,46 @@ void DefaultOffCriticalDataPathObserver::operator() (
                     // emplace constructor to avoid copy:
                     ObjectWithStringKey obj_to_send(
 #ifdef ENABLE_EVALUATION
-                            message_id,
+                        message_id,
 #endif
-                            version,
-                            timestamp_us,
-                            previous_version,
-                            previous_version_by_key,
-                            new_key,
-                            adfg,
-                            key,
-                            blob,
-                            true);
+                        version,
+                        timestamp_us,
+                        previous_version,
+                        previous_version_by_key,
+                        new_key,
+                        adfg,
+                        key,
+                        blob,
+                        true);
+                    std::string task_name = prefix; 
+                    if(task_name.back() != PATH_SEPARATOR) {
+                        task_name = task_name + PATH_SEPARATOR;
+                    }
+                    int64_t position = typed_ctxt->get_task_ranking(task_name);
                     bool scheduled = false;
                     node_id_t scheduled_node_id;
-                    if((!prefix.empty()) && (!sorted_pathnames.empty())){
-                        auto itr = std::find(sorted_pathnames.begin(), sorted_pathnames.end(), prefix + PATH_SEPARATOR);
-                        if(itr != sorted_pathnames.end() ){
-                            auto position = std::distance(sorted_pathnames.begin(), itr);
-                            std::sregex_token_iterator iter(adfg.begin(), adfg.end(), rgx, -1);
-                            for(; iter != end && position > 0; iter++){
-                                position --;
+                    // Check if the task is scheduled, and get the allocated node_id in adfg using task_rank
+                    if((!prefix.empty()) && (position != -1)){
+                        std::regex rgx(",");
+                        std::sregex_token_iterator end;
+                        std::sregex_token_iterator iter(adfg.begin(), adfg.end(), rgx, -1);
+                        for(; iter != end; iter++){
+                            if(position == 0){
+                                scheduled = true;
+                                scheduled_node_id = static_cast<uint32_t>(std::stoul(*iter));
+                                break;
                             }
-                            scheduled = true;
-                            scheduled_node_id = static_cast<uint32_t>(std::stoul(*iter));
+                            position --;
                         }
                     }
                     if(scheduled){
                         if(scheduled_node_id != typed_ctxt->get_service_client_ref().get_my_id()){
-                            dbg_default_trace("~~~~~~ scheduled the next node to different node in emit ~~~~~~~");
+                            dbg_default_debug("~~~~~~ scheduled(adfg{}) the next task({}) to different node({}) in emit ~~~~~~~", adfg, new_key, scheduled_node_id);
                             typed_ctxt->get_service_client_ref().single_node_trigger_put(obj_to_send, scheduled_node_id);
                         }else{
-                            dbg_default_trace("~~~~~~ scheduled the next node to the same node in emit ~~~~~~~");
+                            dbg_default_debug("~~~~~~ scheduled(adfg()) the next task({}) to the same node in emit ~~~~~~~", adfg, new_key);
                             typed_ctxt->find_handlers_and_local_post(obj_to_send);
                         }
-                        
-                        
                     }else{
                         if (okv.second) {
                             // temp fix since prefix does not have corresponding object pool in console_printer example
@@ -151,16 +147,6 @@ void DefaultOffCriticalDataPathObserver::operator() (
                 uint64_t              message_id,
 #endif
                 const Blob& blob) {
-                    std::string pre_adfg_pathname = object_pool_pathname;
-                    if(object_pool_pathname.back() != PATH_SEPARATOR) {
-                        pre_adfg_pathname = object_pool_pathname + PATH_SEPARATOR;
-                    }
-                    pre_adfg_t pre_adfg = typed_ctxt->get_pre_adfg(pre_adfg_pathname);
-                    std::regex rgx(",");
-                    std::sregex_token_iterator end;
-                    const std::vector<std::string>& sorted_pathnames = pre_adfg.sorted_pathnames;
-                
-                /** TODO: check adfg to find out the machines!! */
                 for (const auto& okv: outputs) {
                     std::string prefix = okv.first;
                     while (!prefix.empty() && prefix.back() == PATH_SEPARATOR) prefix.pop_back();
@@ -169,41 +155,48 @@ void DefaultOffCriticalDataPathObserver::operator() (
                     // emplace constructor to avoid copy:
                     ObjectWithStringKey obj_to_send(
 #ifdef ENABLE_EVALUATION
-                            message_id,
+                        message_id,
 #endif
-                            version,
-                            timestamp_us,
-                            previous_version,
-                            previous_version_by_key,
-                            new_key,
-                            adfg,
-                            key,
-                            blob,
-                            true);
+                        version,
+                        timestamp_us,
+                        previous_version,
+                        previous_version_by_key,
+                        new_key,
+                        adfg,
+                        key,
+                        blob,
+                        true);
+
+                    std::cout << "--- checking prefix of next pathanmes: -- " << prefix << std::endl;
+                    std::string task_name = prefix; 
+                    if(task_name.back() != PATH_SEPARATOR) {
+                        task_name = task_name + PATH_SEPARATOR;
+                    }
+                    int64_t position = typed_ctxt->get_task_ranking(task_name);
                     bool scheduled = false;
                     node_id_t scheduled_node_id;
-                    if((!prefix.empty()) && (!sorted_pathnames.empty())){
-                        auto itr = std::find(sorted_pathnames.begin(), sorted_pathnames.end(), prefix + PATH_SEPARATOR);
-                        if(itr != sorted_pathnames.end() ){
-                            auto position = std::distance(sorted_pathnames.begin(), itr);
-                            std::sregex_token_iterator iter(adfg.begin(), adfg.end(), rgx, -1);
-                            for(; iter != end && position > 0; iter++){
-                                position --;
+                    // Check if the task is scheduled, and get the allocated node_id in adfg using task_rank
+                    if((!prefix.empty()) && (position != -1)){
+                        std::regex rgx(",");
+                        std::sregex_token_iterator end;                           
+                        std::sregex_token_iterator iter(adfg.begin(), adfg.end(), rgx, -1);
+                        for(; iter != end; iter++){
+                            if(position == 0){
+                                scheduled = true;
+                                scheduled_node_id = static_cast<uint32_t>(std::stoul(*iter));
+                                break;
                             }
-                            scheduled = true;
-                            scheduled_node_id = static_cast<uint32_t>(std::stoul(*iter));
+                            position --;
                         }
                     }
                     if(scheduled){
                         if(scheduled_node_id != typed_ctxt->get_service_client_ref().get_my_id()){
-                            dbg_default_trace("~~~~~~ scheduled the next node to different node in emit ~~~~~~~");
+                            dbg_default_debug("~~~~~~ scheduled(adfg:{}) the next task({}) to different node({}) in emit ~~~~~~~",adfg, new_key, scheduled_node_id);
                             typed_ctxt->get_service_client_ref().single_node_trigger_put(obj_to_send, scheduled_node_id);
                         }else{
-                            dbg_default_trace("~~~~~~ scheduled the next node to the same node in emit ~~~~~~~");
+                            dbg_default_debug("~~~~~~ scheduled(adfg:{}) the next task({}) to the same node in emit ~~~~~~~",adfg, new_key);
                             typed_ctxt->find_handlers_and_local_post(obj_to_send);
                         }
-                        
-                        
                     }else{
                         if (okv.second) {
                             // temp fix since prefix does not have corresponding object pool in console_printer example

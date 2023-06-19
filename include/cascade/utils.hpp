@@ -388,6 +388,12 @@ public:
  */
 #define TLT_PERSISTED                               (5001)
 
+/** 
+  * This doesn't work at heterogeneous setting
+  * TODO: instead of hard-code measure upon servers start
+  */
+#define GPU_MEMORY_SIZE                             (14000000)  /** in KB*/
+
 /*
  * For UDLs:
  *      TLT_ACTION_POST     The time when action is inserted into an action_queue for off critical data path processing.

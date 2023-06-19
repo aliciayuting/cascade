@@ -105,7 +105,24 @@ DataFlowGraph::DataFlowGraph(const json& dfg_conf):
         dfgv.task_info = task_info;
         vertices.emplace(dfgv.pathname,dfgv);
     }
-    // Helper function for scheduler: rank the verticies by their dependencies.
+    std::vector<std::string> tasks_rankings = rank_tasks_in_dfg();  
+    for(auto& vertex:vertices){
+        vertex.second.task_info.tasks_rankings_in_dfg = tasks_rankings;
+    }
+}
+
+DataFlowGraph::DataFlowGraph(const DataFlowGraph& other):
+    id(other.id),
+    description(other.description),
+    vertices(other.vertices) {}
+
+DataFlowGraph::DataFlowGraph(DataFlowGraph&& other):
+    id(other.id),
+    description(other.description),
+    vertices(std::move(other.vertices)){}
+
+std::vector<std::string> DataFlowGraph::rank_tasks_in_dfg(){
+    std::vector<std::string> sorted_pathnames;
     std::vector<std::string> next_verticies_to_process;
     for(auto& vertex:vertices){
         if(vertex.second.task_info.required_objects_pathnames.empty()){
@@ -115,41 +132,30 @@ DataFlowGraph::DataFlowGraph(const json& dfg_conf):
     while(!next_verticies_to_process.empty()){
         std::string proc_vertex_pathname = next_verticies_to_process.back();
         next_verticies_to_process.pop_back();
-        bool has_ranked = std::find(this->sorted_pathnames.begin(), this->sorted_pathnames.end(), proc_vertex_pathname) != this->sorted_pathnames.end();
+        bool has_ranked = std::find(sorted_pathnames.begin(), sorted_pathnames.end(), proc_vertex_pathname) != sorted_pathnames.end();
         // check if required verticies are in the ranked_verticies already
         bool ranked_all_required = true;
         for(auto& required_pathname: vertices.at(proc_vertex_pathname).task_info.required_objects_pathnames){
-            ranked_all_required = std::find(this->sorted_pathnames.begin(), this->sorted_pathnames.end(), required_pathname) != this->sorted_pathnames.end();
+            ranked_all_required = std::find(sorted_pathnames.begin(), sorted_pathnames.end(), required_pathname) != sorted_pathnames.end();
             if(!ranked_all_required){
                 break;
             }
         }
         if(!has_ranked && ranked_all_required ){
-            this->sorted_pathnames.emplace_back(proc_vertex_pathname);
+            sorted_pathnames.emplace_back(proc_vertex_pathname);
         }
         const auto& vertex = vertices.at(proc_vertex_pathname);
         for(const auto& uuid_map: vertex.edges){
             for(const auto& edge: uuid_map.second){
                 auto pathname = edge.first;  
-                if( std::find(this->sorted_pathnames.begin(), this->sorted_pathnames.end(), pathname) == this->sorted_pathnames.end()){
+                if( std::find(sorted_pathnames.begin(), sorted_pathnames.end(), pathname) == sorted_pathnames.end()){
                     next_verticies_to_process.emplace_back(pathname);
                 }        
             }
         }   
     }
+    return sorted_pathnames;
 }
-
-DataFlowGraph::DataFlowGraph(const DataFlowGraph& other):
-    id(other.id),
-    description(other.description),
-    vertices(other.vertices),
-    sorted_pathnames(other.sorted_pathnames) {}
-
-DataFlowGraph::DataFlowGraph(DataFlowGraph&& other):
-    id(other.id),
-    description(other.description),
-    vertices(std::move(other.vertices)),
-    sorted_pathnames(std::move(other.sorted_pathnames)) {}
 
 void DataFlowGraph::dump() const {
     std::cout << "DFG: {\n"
@@ -157,10 +163,6 @@ void DataFlowGraph::dump() const {
               << "description: " << description << "\n";
     for (auto& kv:vertices) {
         std::cout << kv.second.to_string() << std::endl;
-    }
-    std::cout << "sorted_pathnames:";
-    for (auto& pathname:sorted_pathnames){
-        std::cout << pathname << ",";
     }
     std::cout << "}" << std::endl;
 }

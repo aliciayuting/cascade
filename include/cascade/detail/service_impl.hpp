@@ -2158,15 +2158,19 @@ uint32_t ServiceClient<CascadeTypes...>::get_subgroup_type_index() {
 }
 
 template <typename... CascadeTypes>
-void ServiceClient<CascadeTypes...>::get_updated_group_cached_models_info(std::unordered_map<node_id_t, std::set<uint32_t>>& _group_cached_models_info) {
+void ServiceClient<CascadeTypes...>::get_updated_group_cached_models_info(
+                                    std::unordered_map<node_id_t, std::set<uint32_t>>& _group_cached_models_info, 
+                                    std::unordered_map<node_id_t, uint64_t>& _group_available_memory) {
     _group_cached_models_info.clear();
     std::vector<node_id_t> nodes = group_ptr->get_members();
     for(node_id_t node_id : nodes){
+        uint64_t available_memory = GPU_MEMORY_SIZE;
         uint64_t encoded_models = group_ptr->get_cache_models_info(node_id);
         std::set<uint32_t> decoded_models;
         for(int k = 0; k < 64; ++k){
             if((encoded_models >> k) & 1){
                 decoded_models.emplace(k);
+                // available_memory -= ; ALICIA TODO: change model_info_cache structure, add a map from model_id to size and runtime
             }
         }
         _group_cached_models_info.emplace(node_id, decoded_models);
@@ -2243,14 +2247,7 @@ void CascadeContext<CascadeTypes...>::construct() {
     // TODO: implement the control plane.
     user_defined_logic_manager = UserDefinedLogicManager<CascadeTypes...>::create(this);
     auto dfgs = DataFlowGraph::get_data_flow_graphs();
-    std::unordered_map<std::string, std::vector<DataFlowGraph::MLModelInfo>> _models_info_cache;
     for(auto& dfg : dfgs) {
-        pre_adfg_t pre_adfg;
-        std::string entry_pathname;
-        if (dfg.sorted_pathnames.size() != 0){
-            entry_pathname = dfg.sorted_pathnames[0];
-            pre_adfg.sorted_pathnames = dfg.sorted_pathnames;
-        }
         for(auto& vertex : dfg.vertices) {
             for(auto& edge : vertex.second.edges) {
                 register_prefixes(
@@ -2268,27 +2265,10 @@ void CascadeContext<CascadeTypes...>::construct() {
                         edge.second,
                         vertex.second.task_info.expected_execution_timeus);
             }
-            pre_adfg.task_info_map.emplace(vertex.first, vertex.second.task_info);
-            // add the model from task_info to the local model cache
-            if (_models_info_cache.find(vertex.second.pathname) == _models_info_cache.end()) {
-                _models_info_cache[vertex.second.pathname] = {};
-            }
-            for(auto& model_info : vertex.second.task_info.models_info) {
-                _models_info_cache[vertex.second.pathname].emplace_back(model_info);
-            }
-        }
-        if (!entry_pathname.empty()){
-            std::unique_lock<std::shared_mutex> wlck(this->pre_adfg_dependencies_mutex);
-            pre_adfg_dependencies.emplace(entry_pathname, pre_adfg);
-        }else{
-            dbg_default_warn("dfg with uid={}, include no vertex", dfg.id);
+            prefix_to_task_info.emplace(vertex.first, vertex.second.task_info);
         }
         // Testing purposes
         dfg.dump();
-    }
-    if(!_models_info_cache.empty()){
-        std::unique_lock<std::shared_mutex> wlck(this->models_info_cache_mutex);
-        models_info_cache = std::move(_models_info_cache);
     }
     // 2 - start the working threads
     is_running.store(true);
@@ -2731,23 +2711,17 @@ match_results_t CascadeContext<CascadeTypes...>::get_prefix_handlers(const std::
 }
 
 template <typename... CascadeTypes>
-pre_adfg_t CascadeContext<CascadeTypes...>::get_pre_adfg(const std::string& vertex_pathname) {
-    std::shared_lock rlck(this->pre_adfg_dependencies_mutex);
-    for(auto& pre_adfg: this->pre_adfg_dependencies){
-        // vertex_pathname is an entry_path
-        if(pre_adfg.first == vertex_pathname){
-            return pre_adfg.second;
-        }else{
-            for(auto& vertex_info: pre_adfg.second.task_info_map){
-                if(vertex_info.first == vertex_pathname){
-                    return pre_adfg.second;
-                }
-            }
+int64_t CascadeContext<CascadeTypes...>::get_task_ranking(const std::string& vertex_pathname) {
+    auto it = this->prefix_to_task_info.find(vertex_pathname);
+    if(it != this->prefix_to_task_info.end()) {
+        auto& tasks_rankings = it->second.tasks_rankings_in_dfg;
+        auto pos = std::find(tasks_rankings.begin(), tasks_rankings.end(), vertex_pathname) - tasks_rankings.begin();
+        if((size_t)pos < tasks_rankings.size()){
+            return (int64_t)pos;
         }
     }
-    dbg_default_warn("pre_adfg not exist for pathname[{}]", vertex_pathname);
-    pre_adfg_t empty_pre_adfg;
-    return empty_pre_adfg;
+    dbg_default_warn("task_ranking not exist for pathname[{}]", vertex_pathname);
+    return -1;
 }
 
 template <typename... CascadeTypes>
@@ -2982,7 +2956,7 @@ bool CascadeContext<CascadeTypes...>::check_if_model_in_gpu(node_id_t node_id, u
     if(cur_us - last_group_cached_models_info_update_timeus > interval) {
         last_group_cached_models_info_update_timeus = cur_us;
         std::unique_lock<std::shared_mutex> wlck(this->group_cached_models_info_mutex);
-        this->get_service_client_ref().get_updated_group_cached_models_info(this->group_cached_models_info);
+        this->get_service_client_ref().get_updated_group_cached_models_info(this->group_cached_models_info, this->group_available_memory);
     }
     std::shared_lock rlck(this->group_cached_models_info_mutex);
     bool exist_model_in_gpu = this->group_cached_models_info[node_id].find(model_id) != this->group_cached_models_info[node_id].end();
@@ -2990,12 +2964,15 @@ bool CascadeContext<CascadeTypes...>::check_if_model_in_gpu(node_id_t node_id, u
 }
 
 template <typename... CascadeTypes>
-const std::vector<DataFlowGraph::MLModelInfo>& CascadeContext<CascadeTypes...>::get_required_models_info(std::string pathname){
+std::vector<DataFlowGraph::MLModelInfo> CascadeContext<CascadeTypes...>::get_required_models_info(std::string pathname){
     if(pathname.back() != PATH_SEPARATOR){
         pathname += PATH_SEPARATOR;
     }
-    std::shared_lock rlck(this->models_info_cache_mutex);
-    return this->models_info_cache[pathname];
+    auto it = this->prefix_to_task_info.find(pathname);
+    if(it != this->prefix_to_task_info.end()) {
+        return it->second.models_info;   
+    }
+    return std::vector<DataFlowGraph::MLModelInfo>();
 }
 
 
@@ -3037,41 +3014,43 @@ std::string CascadeContext<CascadeTypes...>::local_cached_info_dump() {
 
 template <typename... CascadeTypes>
 std::string CascadeContext<CascadeTypes...>::tide_scheduler(std::string entry_prefix){
-     // vertex pathname -> (node_id, finish_time(us))
-     // in the algorithm denote task ~ vertex pathname
-     std::unordered_map<std::string, std::pair<node_id_t,uint64_t>> allocated_tasks_info;
-     std::vector<node_id_t> workers_set = this->get_service_client_ref().get_members();
-     // remove node_id 0 from worker_set, since it is metadata server
-    /** This require node0 to have both metadata service and at least one of VCSS/PCSS/TCSS shard, so that it can process trigger_put. 
-      * Otherwise, uncomment below line.
-      * TODO: change this hard-coded to config/auto condition phrase
-      */
-     workers_set.erase(std::remove(workers_set.begin(), workers_set.end(), 0), workers_set.end());
-     pre_adfg_t pre_adfg = this->get_pre_adfg(entry_prefix);
-     if(pre_adfg.sorted_pathnames.empty()){
-            dbg_default_error("CascadeContext::tide_scheduler pre_adfg is empty");
-            return "";
-     }
-     uint64_t cur_us = get_time_us(true);
-     node_id_t local_node_id = this->get_service_client_ref().get_my_id();
-     std::vector<std::string>& sorted_pathnames = pre_adfg.sorted_pathnames;
-     std::unordered_map<node_id_t, uint64_t> earliest_available_times;
+    // vertex pathname -> (node_id, finish_time(us))
+    // in the algorithm denote task ~ vertex pathname
+    std::unordered_map<std::string, std::pair<node_id_t,uint64_t>> allocated_tasks_info;
+    std::vector<node_id_t> workers_set = this->get_service_client_ref().get_members();
+    /** remove node_id 0 from worker_set, since it is metadata server
+     * This require node0 to have both metadata service and at least one of VCSS/PCSS/TCSS shard, so that it can process trigger_put. 
+     * Otherwise, uncomment below line.
+     * TODO: change this hard-coded to config/auto condition phrase
+    */
+    workers_set.erase(std::remove(workers_set.begin(), workers_set.end(), 0), workers_set.end());
+    auto it = this->prefix_to_task_info.find(entry_prefix);
+    if(it == this->prefix_to_task_info.end()){
+        dbg_default_error("CascadeContext::tide_scheduler task_info is empty");
+        return "";
+    }
+    DataFlowGraph::TaskInfo& entry_task_info = this->prefix_to_task_info[entry_prefix];
+
+    uint64_t cur_us = get_time_us(true);
+    node_id_t local_node_id = this->get_service_client_ref().get_my_id();
+    std::vector<std::string>& tasks_rankings = entry_task_info.tasks_rankings_in_dfg;
+    std::unordered_map<node_id_t, uint64_t> earliest_available_times;
     for(auto& node_id : workers_set){
         earliest_available_times[node_id] = cur_us + this->check_queue_wait_time(node_id);
     }
-    for(auto& task_name: sorted_pathnames){
-        auto& task_info = pre_adfg.task_info_map[task_name];
+    for(auto& task_name: tasks_rankings){
+        auto& task_info = this->prefix_to_task_info[task_name];
         // 0. PRE-COMPUTE (used later by 2. case1) get the earliest start time, suppose all preq_tasks need to transfer data
         node_id_t selected_worker_id = INVALID_NODE_ID;
 	    uint64_t earliest_start_time = UINT64_MAX;
         for(const auto& cur_worker: workers_set){
             uint64_t cur_earliest_start_time = cur_us;
             uint64_t inputs_arrival_time = cur_us;
-            if(task_name == sorted_pathnames[0] && cur_worker != local_node_id){
+            if(task_name == tasks_rankings[0] && cur_worker != local_node_id){
                     inputs_arrival_time += CPU_to_CPU_delay(task_info.input_size);
             }
             for(std::string& preq_task_name: task_info.required_objects_pathnames){
-                auto& preq_task_info = pre_adfg.task_info_map[preq_task_name];
+                auto& preq_task_info = this->prefix_to_task_info[preq_task_name];
                 auto& alloc_info = allocated_tasks_info[preq_task_name];
                 uint64_t arrival_time = alloc_info.second;
                 if(cur_worker != alloc_info.first){
@@ -3102,7 +3081,7 @@ std::string CascadeContext<CascadeTypes...>::tide_scheduler(std::string entry_pr
         earliest_available_times[selected_worker_id] = earliest_finish_time;
     }
     std::string allocated_machines;
-    for(auto& pathname: sorted_pathnames){
+    for(auto& pathname: tasks_rankings){
         allocated_machines +=  std::to_string(allocated_tasks_info.at(pathname).first) + ",";
     }
     return allocated_machines;

@@ -1629,7 +1629,9 @@ namespace cascade {
          * Get the updated cached_models_info of all nodes in the group from derechoSST
          * @param  _group_cached_models_info     CascadeContext cached group's gpu_models information to update
         */
-        void get_updated_group_cached_models_info(std::unordered_map<node_id_t, std::set<uint32_t>>& _group_cached_models_info);
+        void get_updated_group_cached_models_info(
+                                            std::unordered_map<node_id_t, std::set<uint32_t>>& _group_cached_models_info,
+                                            std::unordered_map<node_id_t, uint64_t>& _group_available_memory);
 
         /**
          * Get the updated load_info of all nodes in the group from derechoSST
@@ -1728,14 +1730,6 @@ namespace cascade {
                     >
                 >;
     using match_results_t = std::unordered_map<std::string,prefix_entry_t>;
-/** TODO: change to vector instead of map for small number of elements, which would be faster. Same for set->vector*/
-    struct pre_adfg_t{
-        std::unordered_map<
-                    std::string, //pathname
-                    DataFlowGraph::TaskInfo //task info
-                > task_info_map;
-        std::vector<std::string>    sorted_pathnames;
-    };
             
     template <typename... CascadeTypes>
     class CascadeContext: public ICascadeContext {
@@ -1786,23 +1780,18 @@ namespace cascade {
         std::thread              scheduler_workhorse;  // scheduler thread
         
          /** information used by scheduler 
-         * mapping between {entry_pathname of the dfg -> pre_adfg_t}
+         * mapping between {entry_pathname of the dfg -> DataFlowGraph::TaskInfo}
          */
-        std::unordered_map<std::string, pre_adfg_t> pre_adfg_dependencies;
-        mutable std::shared_mutex      pre_adfg_dependencies_mutex;
+        std::unordered_map<std::string, DataFlowGraph::TaskInfo> prefix_to_task_info;
 
-        /** models information related to the pathname
-         * mapping between {pathname of the dfg -> vector of models info that this vertex use}
-        */
-        std::unordered_map<std::string, std::vector<DataFlowGraph::MLModelInfo>> models_info_cache;
-        mutable std::shared_mutex      models_info_cache_mutex;
-
-        std::atomic<uint64_t>  local_queue_wait_time;
-        std::set<uint32_t>  local_cached_models_info;
+        std::atomic<uint64_t>   local_queue_wait_time;
+        std::set<uint32_t>      local_cached_models_info;
+        uint64_t                local_available_memory;
         mutable std::shared_mutex local_cached_models_info_mutex;
         std::atomic<bool>         local_cached_models_info_updated;
 
         std::unordered_map<node_id_t, std::set<uint32_t>>  group_cached_models_info; // include all other nodes info, beside this node
+        std::unordered_map<node_id_t, uint64_t>            group_available_memory; // derived from group_cached_models_info
         std::unordered_map<node_id_t, uint64_t>            group_queue_wait_times;// include all other nodes info, beside this node
         mutable std::shared_mutex      group_cached_models_info_mutex;
         mutable std::shared_mutex      group_queue_wait_times_mutex;
@@ -1944,10 +1933,10 @@ namespace cascade {
          */
         virtual match_results_t get_prefix_handlers(const std::string& prefix);
         /**
-         * Helper function for adfg construction
-         * @param entry_pathname        - the path name of the entry vertex of the dfg
+         * Helper function to find the allocated worker based on the ranking of pathname
+         * @param pathname        - the path name of the entry vertex of the dfg
         */
-        virtual pre_adfg_t get_pre_adfg(const std::string& vertex_pathname);
+        virtual int64_t get_task_ranking(const std::string& pathname);
         /**
          * Helper function for scheduler DAG structure trigger_put, if the next task is to be executed on the same machine
          * @param key           - key name of the object
@@ -2010,7 +1999,7 @@ namespace cascade {
          * @param  pathname the model_id related to the pathname
          * @return MLModelInfo 
         */
-        const std::vector<DataFlowGraph::MLModelInfo>& get_required_models_info(std::string pathname);
+        std::vector<DataFlowGraph::MLModelInfo> get_required_models_info(std::string pathname);
 
         /**
          * update local_cached_models_info, called
