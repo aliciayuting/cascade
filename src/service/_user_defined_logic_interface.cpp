@@ -83,10 +83,10 @@ void DefaultOffCriticalDataPathObserver::operator() (
                     }
                     if(scheduled){
                         if(scheduled_node_id != typed_ctxt->get_service_client_ref().get_my_id()){
-                            dbg_default_debug("~~~~~~ scheduled(adfg{}) the next task({}) to different node({}) in emit ~~~~~~~", adfg, new_key, scheduled_node_id);
+                            std::cout << "~~~~~~ scheduled(adfg" << adfg << ") the next task("<< new_key << "," << position << ") to different node(" << scheduled_node_id<< ") in emit ~~~~~~~" << std::endl;
                             typed_ctxt->get_service_client_ref().single_node_trigger_put(obj_to_send, scheduled_node_id);
                         }else{
-                            dbg_default_debug("~~~~~~ scheduled(adfg()) the next task({}) to the same node in emit ~~~~~~~", adfg, new_key);
+                            std::cout << "~~~~~~ scheduled(adfg" << adfg << ") the next task("<< new_key << "," << position <<") to the same node in emit ~~~~~~~"<< std::endl;
                             typed_ctxt->find_handlers_and_local_post(obj_to_send);
                         }
                     }else{
@@ -191,10 +191,10 @@ void DefaultOffCriticalDataPathObserver::operator() (
                     }
                     if(scheduled){
                         if(scheduled_node_id != typed_ctxt->get_service_client_ref().get_my_id()){
-                            dbg_default_debug("~~~~~~ scheduled(adfg:{}) the next task({}) to different node({}) in emit ~~~~~~~",adfg, new_key, scheduled_node_id);
+                            std::cout << "~~~~~~ scheduled(adfg" << adfg << ") the next task("<<new_key << "," << position << ") to different node(" << scheduled_node_id<< ") in emit ~~~~~~~" << std::endl;
                             typed_ctxt->get_service_client_ref().single_node_trigger_put(obj_to_send, scheduled_node_id);
                         }else{
-                            dbg_default_debug("~~~~~~ scheduled(adfg:{}) the next task({}) to the same node in emit ~~~~~~~",adfg, new_key);
+                            std::cout << "~~~~~~ scheduled(adfg" << adfg << ") the next task("<< new_key << "," << position<<") to the same node in emit ~~~~~~~"<< std::endl;
                             typed_ctxt->find_handlers_and_local_post(obj_to_send);
                         }
                     }else{
