@@ -2173,7 +2173,7 @@ void ServiceClient<CascadeTypes...>::get_updated_group_cached_models_info(
                 // available_memory -= ; ALICIA TODO: change model_info_cache structure, add a map from model_id to size and runtime
             }
         }
-        _group_cached_models_info.emplace(node_id, decoded_models);
+        _group_cached_models_info[node_id] = decoded_models;
     }
 }
 
@@ -2182,7 +2182,7 @@ void ServiceClient<CascadeTypes...>::get_updated_group_queue_wait_times(std::uno
     std::vector<node_id_t> nodes = group_ptr->get_members();
     for(node_id_t node_id : nodes) {
         uint64_t load_info = group_ptr->get_load_info(node_id);
-        _group_queue_wait_times.emplace(node_id, load_info);
+        _group_queue_wait_times[node_id] = load_info;
     }
 }
 
