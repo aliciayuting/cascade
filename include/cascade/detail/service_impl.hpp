@@ -2901,6 +2901,7 @@ bool CascadeContext<CascadeTypes...>::post(Action&& action, bool is_trigger) {
     * 2. for task waiting for dependencies, only update wait_time  once .
     */
     this->local_queue_wait_time += action.expected_execution_timeus;
+    std::cout << "send local_queue_wait_time: " << this->local_queue_wait_time << std::endl;
     this->get_service_client_ref().send_local_queue_wait_time(this->local_queue_wait_time);
     dbg_default_trace("Action posted to Cascade context@{:p}.", static_cast<void*>(this));
     return true;
@@ -3018,6 +3019,11 @@ std::string CascadeContext<CascadeTypes...>::tide_scheduler(std::string entry_pr
     // in the algorithm denote task ~ vertex pathname
     std::unordered_map<std::string, std::pair<node_id_t,uint64_t>> allocated_tasks_info;
     std::vector<node_id_t> workers_set = this->get_service_client_ref().get_members();
+    std::cout << "workers_set: ";
+    for(node_id_t n: workers_set){
+        std::cout<< n << " ";
+    }
+    std::cout << std::endl;
     /** remove node_id 0 from worker_set, since it is metadata server
      * This require node0 to have both metadata service and at least one of VCSS/PCSS/TCSS shard, so that it can process trigger_put. 
      * Otherwise, uncomment below line.
@@ -3039,11 +3045,13 @@ std::string CascadeContext<CascadeTypes...>::tide_scheduler(std::string entry_pr
         earliest_available_times[node_id] = cur_us + this->check_queue_wait_time(node_id);
     }
     for(auto& task_name: tasks_rankings){
+        std::cout << "------ scheduling task " << task_name << " -----" << std::endl;
         auto& task_info = this->prefix_to_task_info[task_name];
         // 0. PRE-COMPUTE (used later by 2. case1) get the earliest start time, suppose all preq_tasks need to transfer data
         node_id_t selected_worker_id = INVALID_NODE_ID;
 	    uint64_t earliest_start_time = UINT64_MAX;
         for(const auto& cur_worker: workers_set){
+            std::cout << "   worker " << cur_worker << " , wait_time " << this->check_queue_wait_time(cur_worker);
             uint64_t cur_earliest_start_time = cur_us;
             uint64_t inputs_arrival_time = cur_us;
             if(task_name == tasks_rankings[0] && cur_worker != local_node_id){
@@ -3065,13 +3073,16 @@ std::string CascadeContext<CascadeTypes...>::tide_scheduler(std::string entry_pr
                     model_fetch_time += host_to_GPU_delay(model_info.model_size);
                 }
             }
+            std::cout << " , model fetch time" << model_fetch_time;
             /*** ALICIA TODO: take into account of allocations in this round */
             cur_earliest_start_time = std::max(earliest_available_times[cur_worker], cur_earliest_start_time) + model_fetch_time;
             if(cur_earliest_start_time < earliest_start_time){
                 earliest_start_time = cur_earliest_start_time;
                 selected_worker_id = cur_worker;
             }
+            std::cout << " , EST " << cur_earliest_start_time << std::endl;
         }
+        std::cout << " -- -- -- -- -- -- -- " << std::endl;
         if(selected_worker_id == INVALID_NODE_ID){
             dbg_default_error("CascadeContext::tide_scheduler selected_worker_id == -1");
             return "";
