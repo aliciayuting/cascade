@@ -259,6 +259,16 @@ namespace cascade {
     }
 
     /**
+      * Helper data structure used by scheduler
+      * TODO: maybe this should be defined at data_flow_graph?
+      */
+    struct MLModelStats{
+        uint64_t model_size;
+        uint64_t queueing_requests_count;   // count of requests in the queue that depend on this model
+        uint64_t total_requests_count;      // total count of requests that use this model so far
+    };
+
+    /**
      * The service will start a cascade service node to serve the client.
      */
     template <typename... CascadeTypes>
@@ -1631,7 +1641,8 @@ namespace cascade {
         */
         void get_updated_group_cached_models_info(
                                             std::unordered_map<node_id_t, std::set<uint32_t>>& _group_cached_models_info,
-                                            std::unordered_map<node_id_t, uint64_t>& _group_available_memory);
+                                            std::unordered_map<node_id_t, uint64_t>& _group_available_memory,
+                                            const std::unordered_map<uint64_t, MLModelStats>&   _local_ml_models_stats);
 
         /**
          * Get the updated load_info of all nodes in the group from derechoSST
@@ -1783,6 +1794,8 @@ namespace cascade {
          * mapping between {entry_pathname of the dfg -> DataFlowGraph::TaskInfo}
          */
         std::unordered_map<std::string, DataFlowGraph::TaskInfo> prefix_to_task_info;
+        // mapping betwee {model_id -> MLModelStats}, used by scheduler to decide which model to load/evict
+        std::unordered_map<uint64_t, MLModelStats>      local_ml_models_stats;
 
         std::atomic<uint64_t>   local_queue_wait_time;
         std::set<uint32_t>      local_cached_models_info;

@@ -2160,7 +2160,8 @@ uint32_t ServiceClient<CascadeTypes...>::get_subgroup_type_index() {
 template <typename... CascadeTypes>
 void ServiceClient<CascadeTypes...>::get_updated_group_cached_models_info(
                                     std::unordered_map<node_id_t, std::set<uint32_t>>& _group_cached_models_info, 
-                                    std::unordered_map<node_id_t, uint64_t>& _group_available_memory) {
+                                    std::unordered_map<node_id_t, uint64_t>& _group_available_memory,
+                                    const std::unordered_map<uint64_t, MLModelStats>&   _local_ml_models_stats) {
     _group_cached_models_info.clear();
     std::vector<node_id_t> nodes = group_ptr->get_members();
     for(node_id_t node_id : nodes){
@@ -2170,10 +2171,11 @@ void ServiceClient<CascadeTypes...>::get_updated_group_cached_models_info(
         for(int k = 0; k < 64; ++k){
             if((encoded_models >> k) & 1){
                 decoded_models.emplace(k);
-                // available_memory -= ; ALICIA TODO: change model_info_cache structure, add a map from model_id to size and runtime
+                available_memory -= _local_ml_models_stats.at((uint64_t)k).model_size; 
             }
         }
         _group_cached_models_info[node_id] = decoded_models;
+        _group_available_memory[node_id] = available_memory;
     }
 }
 
@@ -2266,6 +2268,10 @@ void CascadeContext<CascadeTypes...>::construct() {
                         vertex.second.task_info.expected_execution_timeus);
             }
             prefix_to_task_info.emplace(vertex.first, vertex.second.task_info);
+            for(auto& model_info: vertex.second.task_info.models_info){
+                MLModelStats model_stats = {model_info.model_size, 0, 0};
+                local_ml_models_stats.emplace(model_info.model_id, model_stats);
+            }
         }
         // Testing purposes
         dfg.dump();
@@ -2852,9 +2858,10 @@ bool CascadeContext<CascadeTypes...>::post(Action&& action, bool is_trigger) {
 #ifdef HAS_STATEFUL_UDL_SUPPORT
                     break;
                 case DataFlowGraph::Statefulness::SINGLETHREADED:
+                    bool task_with_same;
                     // check if action is in single_threaded_action_queue_for_p2p, if it is add_value_ptr to that action                    
                     if(action.required_object_pathnames.size() > 1){
-                        bool task_with_same = single_threaded_action_queue_for_p2p.action_buffer_emplace(action);
+                        task_with_same = single_threaded_action_queue_for_p2p.action_buffer_emplace(action);
                         if(!task_with_same){
                             single_threaded_action_queue_for_p2p.action_buffer_enqueue(std::move(action));
                         }
@@ -2862,6 +2869,10 @@ bool CascadeContext<CascadeTypes...>::post(Action&& action, bool is_trigger) {
                     }else{
                         single_threaded_action_queue_for_p2p.action_buffer_enqueue(std::move(action));
                         break;
+                    }
+                    if(!task_with_same){
+                        this->local_queue_wait_time += action.expected_execution_timeus;
+                        this->get_service_client_ref().send_local_queue_wait_time(this->local_queue_wait_time);
                     }
             }
 #endif
@@ -2895,14 +2906,7 @@ bool CascadeContext<CascadeTypes...>::post(Action&& action, bool is_trigger) {
     } else {
         dbg_default_warn("Failed to post to Cascade context@{:p} because it is not running.", static_cast<void*>(this));
         return false;
-    }
-    /** TODO: 
-    * 1. use expected run_time instead of 1
-    * 2. for task waiting for dependencies, only update wait_time  once .
-    */
-    this->local_queue_wait_time += action.expected_execution_timeus;
-    std::cout << "send local_queue_wait_time: " << this->local_queue_wait_time << std::endl;
-    this->get_service_client_ref().send_local_queue_wait_time(this->local_queue_wait_time);
+    }   
     dbg_default_trace("Action posted to Cascade context@{:p}.", static_cast<void*>(this));
     return true;
 }
@@ -2957,7 +2961,9 @@ bool CascadeContext<CascadeTypes...>::check_if_model_in_gpu(node_id_t node_id, u
     if(cur_us - last_group_cached_models_info_update_timeus > interval) {
         last_group_cached_models_info_update_timeus = cur_us;
         std::unique_lock<std::shared_mutex> wlck(this->group_cached_models_info_mutex);
-        this->get_service_client_ref().get_updated_group_cached_models_info(this->group_cached_models_info, this->group_available_memory);
+        this->get_service_client_ref().get_updated_group_cached_models_info(this->group_cached_models_info, 
+                                                                            this->group_available_memory,
+                                                                            this->local_ml_models_stats);
     }
     std::shared_lock rlck(this->group_cached_models_info_mutex);
     bool exist_model_in_gpu = this->group_cached_models_info[node_id].find(model_id) != this->group_cached_models_info[node_id].end();
@@ -3019,17 +3025,14 @@ std::string CascadeContext<CascadeTypes...>::tide_scheduler(std::string entry_pr
     // in the algorithm denote task ~ vertex pathname
     std::unordered_map<std::string, std::pair<node_id_t,uint64_t>> allocated_tasks_info;
     std::vector<node_id_t> workers_set = this->get_service_client_ref().get_members();
-    std::cout << "workers_set: ";
-    for(node_id_t n: workers_set){
-        std::cout<< n << " ";
-    }
-    std::cout << std::endl;
     /** remove node_id 0 from worker_set, since it is metadata server
      * This require node0 to have both metadata service and at least one of VCSS/PCSS/TCSS shard, so that it can process trigger_put. 
      * Otherwise, uncomment below line.
      * TODO: change this hard-coded to config/auto condition phrase
     */
     workers_set.erase(std::remove(workers_set.begin(), workers_set.end(), 0), workers_set.end());
+    std::unordered_map<node_id_t, uint64_t>  c_group_available_memory = this->group_available_memory;
+
     auto it = this->prefix_to_task_info.find(entry_prefix);
     if(it == this->prefix_to_task_info.end()){
         dbg_default_error("CascadeContext::tide_scheduler task_info is empty");
@@ -3045,13 +3048,12 @@ std::string CascadeContext<CascadeTypes...>::tide_scheduler(std::string entry_pr
         earliest_available_times[node_id] = cur_us + this->check_queue_wait_time(node_id);
     }
     for(auto& task_name: tasks_rankings){
-        std::cout << "------ scheduling task " << task_name << " -----" << std::endl;
         auto& task_info = this->prefix_to_task_info[task_name];
         // 0. PRE-COMPUTE (used later by 2. case1) get the earliest start time, suppose all preq_tasks need to transfer data
         node_id_t selected_worker_id = INVALID_NODE_ID;
 	    uint64_t earliest_start_time = UINT64_MAX;
+        uint64_t fetching_model_size = 0;
         for(const auto& cur_worker: workers_set){
-            std::cout << "   worker " << cur_worker << " , wait_time " << this->check_queue_wait_time(cur_worker);
             uint64_t cur_earliest_start_time = cur_us;
             uint64_t inputs_arrival_time = cur_us;
             if(task_name == tasks_rankings[0] && cur_worker != local_node_id){
@@ -3068,21 +3070,25 @@ std::string CascadeContext<CascadeTypes...>::tide_scheduler(std::string entry_pr
             }
             cur_earliest_start_time = std::max(cur_earliest_start_time, inputs_arrival_time);
             uint64_t model_fetch_time = 0;
+            uint64_t cur_fetching_model_size = 0;
             for(auto& model_info: task_info.models_info){
                 if(!this->check_if_model_in_gpu(cur_worker, model_info.model_id)){
                     model_fetch_time += host_to_GPU_delay(model_info.model_size);
+                    // count for delay because of model eviction due to memory limit
+                    if(c_group_available_memory[cur_worker] < model_info.model_size){
+                        model_fetch_time += host_to_GPU_delay(model_info.model_size);   // use host_to_GPU_delay to estimate model eviction delay
+                    }
+                    cur_fetching_model_size += model_info.model_size;
                 }
             }
-            std::cout << " , model fetch time" << model_fetch_time;
             /*** ALICIA TODO: take into account of allocations in this round */
             cur_earliest_start_time = std::max(earliest_available_times[cur_worker], cur_earliest_start_time) + model_fetch_time;
             if(cur_earliest_start_time < earliest_start_time){
                 earliest_start_time = cur_earliest_start_time;
                 selected_worker_id = cur_worker;
+                fetching_model_size = cur_fetching_model_size;
             }
-            std::cout << " , EST " << cur_earliest_start_time << std::endl;
         }
-        std::cout << " -- -- -- -- -- -- -- " << std::endl;
         if(selected_worker_id == INVALID_NODE_ID){
             dbg_default_error("CascadeContext::tide_scheduler selected_worker_id == -1");
             return "";
@@ -3090,6 +3096,9 @@ std::string CascadeContext<CascadeTypes...>::tide_scheduler(std::string entry_pr
         uint64_t earliest_finish_time = earliest_start_time + GPU_to_GPU_delay(task_info.input_size) + task_info.expected_execution_timeus;
         allocated_tasks_info[task_name] = {selected_worker_id, earliest_finish_time};
         earliest_available_times[selected_worker_id] = earliest_finish_time;
+        if(fetching_model_size > 0){
+            c_group_available_memory[selected_worker_id] += fetching_model_size;
+        }
     }
     std::string allocated_machines;
     for(auto& pathname: tasks_rankings){
