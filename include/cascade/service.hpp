@@ -2037,6 +2037,14 @@ namespace cascade {
         std::string tide_scheduler(std::string entry_prefix);
 
         /**
+         * given a prefix of the first task of the dfg generage the adfg result for this instance
+         * @param entry_prefix  entry task pathname
+         * @return adfg encoded to string
+        */
+        std::string hash_scheduler(std::string entry_prefix);
+
+
+        /**
          * Destructor
          */
         virtual ~CascadeContext();
