@@ -2467,8 +2467,9 @@ void CascadeContext<CascadeTypes...>::fire_scheduler(Action&& action,uint32_t wo
     dbg_default_trace("-- -- fire_scheduler[{}] for action key: [{}]", worker_id, action.key_string);
     std::string vertex_pathname = (action.key_string).substr(0, action.prefix_length);
     uint64_t before_scheduler_us = get_time_us(true);
-    action.adfg = this->hash_scheduler(vertex_pathname);
     // action.adfg = this->tide_scheduler(vertex_pathname);   // Note: remember to save adfg to objectWithStringKey at emit() 
+    std::string key = (action.key_string).substr(action.prefix_length);
+    action.adfg = this->hash_scheduler(vertex_pathname, key);
     uint64_t after_scheduler_us = get_time_us(true);
     dbg_default_trace("~~~ vertex_pathname: {}, scheduled adfg: {}, time[{}]us", vertex_pathname, action.adfg, after_scheduler_us - before_scheduler_us);
     if(!action.adfg.empty()){
@@ -3108,14 +3109,15 @@ std::string CascadeContext<CascadeTypes...>::tide_scheduler(std::string entry_pr
 }
 
 template <typename... CascadeTypes>
-std::string CascadeContext<CascadeTypes...>::hash_scheduler(std::string entry_prefix){
+std::string CascadeContext<CascadeTypes...>::hash_scheduler(std::string entry_prefix, std::string entry_key){
     std::vector<node_id_t> workers_set = this->get_service_client_ref().get_members();
     workers_set.erase(std::remove(workers_set.begin(), workers_set.end(), 0), workers_set.end());
     DataFlowGraph::TaskInfo& entry_task_info = this->prefix_to_task_info[entry_prefix];
     std::vector<std::string>& tasks_rankings = entry_task_info.tasks_rankings_in_dfg;
     std::string allocated_machines;
     for(auto& task_name: tasks_rankings){
-        node_id_t random_node_id = workers_set[std::hash<std::string>{}(task_name) % workers_set.size()];
+        std::string key = task_name + entry_key;
+        node_id_t random_node_id = workers_set[std::hash<std::string>{}(key) % workers_set.size()];
         allocated_machines +=  std::to_string(random_node_id) + ",";
     }
     return allocated_machines;
