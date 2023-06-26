@@ -1,5 +1,5 @@
 #include <cascade/detail/_user_defined_logic_interface.hpp>
-#include <regex>
+
 
 namespace derecho {
 namespace cascade {
@@ -60,34 +60,21 @@ void DefaultOffCriticalDataPathObserver::operator() (
                         key,
                         blob,
                         true);
-                    std::string task_name = prefix; 
-                    if(task_name.back() != PATH_SEPARATOR) {
-                        task_name = task_name + PATH_SEPARATOR;
-                    }
-                    int64_t task_rank = typed_ctxt->get_task_ranking(task_name);
                     bool scheduled = false;
                     node_id_t scheduled_node_id;
-                    // Check if the task is scheduled, and get the allocated node_id in adfg using task_rank
-                    if((!prefix.empty()) && (task_rank != -1)){
-                        int64_t position = task_rank;
-                        std::regex rgx(",");
-                        std::sregex_token_iterator end;
-                        std::sregex_token_iterator iter(adfg.begin(), adfg.end(), rgx, -1);
-                        for(; iter != end; iter++){
-                            if(position == 0){
-                                scheduled = true;
-                                scheduled_node_id = static_cast<uint32_t>(std::stoul(*iter));
-                                break;
-                            }
-                            position --;
+                    if(!prefix.empty()){
+                        std::string task_name = prefix;
+                        if(task_name.back() != PATH_SEPARATOR) {
+                            task_name = task_name + PATH_SEPARATOR;
                         }
+                        scheduled_node_id = typed_ctxt->next_task_scheduled_node_id(scheduled, task_name, adfg); 
                     }
                     if(scheduled){
                         if(scheduled_node_id != typed_ctxt->get_service_client_ref().get_my_id()){
-                            dbg_default_debug( "~~~~~~ scheduled(adfg{}) the next task({},{}) to different node({}) in emit ~~~~~~~", adfg, new_key, task_rank, scheduled_node_id);
+                            dbg_default_debug( "~~~~~~ scheduled(adfg{}) the next task({}) to different node({}) in emit ~~~~~~~", adfg, new_key, scheduled_node_id);
                             typed_ctxt->get_service_client_ref().single_node_trigger_put(obj_to_send, scheduled_node_id);
                         }else{
-                            dbg_default_debug( "~~~~~~ scheduled(adfg{}) the next task({},{}) to the same node in emit ~~~~~~~", adfg, new_key, task_rank);
+                            dbg_default_debug( "~~~~~~ scheduled(adfg{}) the next task({}) to the same node in emit ~~~~~~~", adfg, new_key);
                             typed_ctxt->find_handlers_and_local_post(obj_to_send);
                         }
                     }else{
@@ -131,9 +118,6 @@ void DefaultOffCriticalDataPathObserver::operator() (
 
     // call typed handler
     dbg_default_trace("DefaultOffCriticalDataPathObserver: calling typed handler for key={}...", full_key_string);
-    
-    /** TODO: Clean up emit code
-     *  emit function is duplicated from above. Write the emit function separately and reuse it*/
     this->ocdpo_handler(
             sender,
             object_pool_pathname,
@@ -167,36 +151,21 @@ void DefaultOffCriticalDataPathObserver::operator() (
                         key,
                         blob,
                         true);
-
-                    std::cout << "--- checking prefix of next pathanmes: -- " << prefix << std::endl;
-                    std::string task_name = prefix; 
-                    if(task_name.back() != PATH_SEPARATOR) {
-                        task_name = task_name + PATH_SEPARATOR;
-                    }
-                    int64_t task_rank = typed_ctxt->get_task_ranking(task_name);
                     bool scheduled = false;
                     node_id_t scheduled_node_id;
-                    // Check if the task is scheduled, and get the allocated node_id in adfg using task_rank
-                    if((!prefix.empty()) && (task_rank != -1)){
-                        uint64_t position = task_rank;
-                        std::regex rgx(",");
-                        std::sregex_token_iterator end;                           
-                        std::sregex_token_iterator iter(adfg.begin(), adfg.end(), rgx, -1);
-                        for(; iter != end; iter++){
-                            if(position == 0){
-                                scheduled = true;
-                                scheduled_node_id = static_cast<uint32_t>(std::stoul(*iter));
-                                break;
-                            }
-                            position --;
+                    if(!prefix.empty()){
+                        std::string task_name = prefix;
+                        if(task_name.back() != PATH_SEPARATOR) {
+                            task_name = task_name + PATH_SEPARATOR;
                         }
+                        scheduled_node_id = typed_ctxt->next_task_scheduled_node_id(scheduled, task_name, adfg); 
                     }
                     if(scheduled){
                         if(scheduled_node_id != typed_ctxt->get_service_client_ref().get_my_id()){
-                            dbg_default_debug( "~~~~~~ scheduled(adfg{}) the next task({},{}) to different node({}) in emit ~~~~~~~", adfg, new_key, task_rank, scheduled_node_id);
+                            dbg_default_debug( "~~~~~~ scheduled(adfg{}) the next task({}) to different node({}) in emit ~~~~~~~", adfg, new_key,  scheduled_node_id);
                             typed_ctxt->get_service_client_ref().single_node_trigger_put(obj_to_send, scheduled_node_id);
                         }else{
-                            dbg_default_debug( "~~~~~~ scheduled(adfg{}) the next task({},{}) to the same node in emit ~~~~~~~", adfg, new_key, task_rank);
+                            dbg_default_debug( "~~~~~~ scheduled(adfg{}) the next task({}) to the same node in emit ~~~~~~~", adfg, new_key);
                             typed_ctxt->find_handlers_and_local_post(obj_to_send);
                         }
                     }else{

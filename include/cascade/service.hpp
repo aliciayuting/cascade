@@ -1799,7 +1799,7 @@ namespace cascade {
 
         std::atomic<uint64_t>   local_queue_wait_time;
         std::set<uint32_t>      local_cached_models_info;
-        uint64_t                local_available_memory;
+        std::atomic<uint64_t>      local_available_memory;
         mutable std::shared_mutex local_cached_models_info_mutex;
         std::atomic<bool>         local_cached_models_info_updated;
 
@@ -2030,6 +2030,14 @@ namespace cascade {
         std::string local_cached_info_dump();
 
         /**
+          * Helper function used by emit to get the scheduled node_id from adfg,
+          * reschedule the task if the scheduled node is no longer a good choice.
+        */
+        node_id_t next_task_scheduled_node_id(bool& scheduled, 
+                                              const std::string& task_name, 
+                                              const std::string& adfg);
+
+        /**
          * given a prefix of the first task of the dfg generage the adfg result for this instance
          * @param entry_prefix  entry task pathname
          * @return adfg encoded to string
@@ -2039,7 +2047,7 @@ namespace cascade {
         /**
          * given a prefix of the first task of the dfg generage the adfg result for this instance
          * @param entry_prefix  entry task pathname
-         * @param entry_key entry task key with prefix removed
+         * @param entry_key     entry task key with prefix removed
          * @return adfg encoded to string
         */
         std::string hash_scheduler(std::string entry_prefix, std::string entry_key);

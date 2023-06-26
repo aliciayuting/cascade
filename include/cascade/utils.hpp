@@ -394,6 +394,14 @@ public:
   */
 #define GPU_MEMORY_SIZE                             (14000000)  /** in KB*/
 
+/**
+ * For scheduler to decide if were to reschedule the next tasks if the 
+ * current global workers' states shifted since the scheduler earlier.
+ * If the worker_waittime > task execution time * RESCHEDULE_THREASHOLD_FACTOR
+ * the reschedule the task.
+*/
+#define RESCHEDULE_THREASHOLD_FACTOR                (1)
+
 /*
  * For UDLs:
  *      TLT_ACTION_POST     The time when action is inserted into an action_queue for off critical data path processing.

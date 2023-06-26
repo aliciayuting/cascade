@@ -12,6 +12,7 @@
 #include <typeindex>
 #include <variant>
 #include <vector>
+#include <regex>
 
 using namespace std::chrono_literals;
 
@@ -2171,7 +2172,7 @@ void ServiceClient<CascadeTypes...>::get_updated_group_cached_models_info(
         for(int k = 0; k < 64; ++k){
             if((encoded_models >> k) & 1){
                 decoded_models.emplace(k);
-                available_memory -= _local_ml_models_stats.at((uint64_t)k).model_size; 
+                available_memory -= std::min(available_memory, _local_ml_models_stats.at((uint64_t)k).model_size); // avoid negative value
             }
         }
         _group_cached_models_info[node_id] = decoded_models;
@@ -2278,6 +2279,8 @@ void CascadeContext<CascadeTypes...>::construct() {
     }
     // 2 - start the working threads
     is_running.store(true);
+    local_available_memory.store(GPU_MEMORY_SIZE);
+    local_queue_wait_time.store(0);
     uint32_t num_stateless_multicast_workers = 0;
     uint32_t num_stateless_p2p_workers = 0;
     // 2.1 - initialize stateless multicast workers.
@@ -2422,8 +2425,7 @@ void CascadeContext<CascadeTypes...>::workhorse(uint32_t worker_id, struct actio
     while(is_running) {
         // waiting for an action
         Action action = std::move(aq.action_buffer_dequeue(is_running));
-        /** TODO: use expected run_time instead of 1. */
-        this->local_queue_wait_time -= action.expected_execution_timeus;
+        this->local_queue_wait_time -= std::min(action.expected_execution_timeus, this->local_queue_wait_time.load()); // avoid negative value
         this->get_service_client_ref().send_local_queue_wait_time(this->local_queue_wait_time);
         action.fire(this,worker_id);
         if(!is_running) {
@@ -2467,9 +2469,9 @@ void CascadeContext<CascadeTypes...>::fire_scheduler(Action&& action,uint32_t wo
     dbg_default_trace("-- -- fire_scheduler[{}] for action key: [{}]", worker_id, action.key_string);
     std::string vertex_pathname = (action.key_string).substr(0, action.prefix_length);
     uint64_t before_scheduler_us = get_time_us(true);
-    // action.adfg = this->tide_scheduler(vertex_pathname);   // Note: remember to save adfg to objectWithStringKey at emit() 
-    std::string key = (action.key_string).substr(action.prefix_length);
-    action.adfg = this->hash_scheduler(vertex_pathname, key);
+    // std::string key = (action.key_string).substr(action.prefix_length);
+    // action.adfg = this->hash_scheduler(vertex_pathname, key);
+    action.adfg = this->tide_scheduler(vertex_pathname);   // Note: remember to save adfg to objectWithStringKey at emit() 
     uint64_t after_scheduler_us = get_time_us(true);
     dbg_default_trace("~~~ vertex_pathname: {}, scheduled adfg: {}, time[{}]us", vertex_pathname, action.adfg, after_scheduler_us - before_scheduler_us);
     if(!action.adfg.empty()){
@@ -2990,6 +2992,11 @@ void CascadeContext<CascadeTypes...>::update_local_model_info(std::set<uint32_t>
     std::unique_lock wlck(this->local_cached_models_info_mutex);
     this->local_cached_models_info = new_cached_models;
     this->local_cached_models_info_updated = true;
+    uint64_t available_memory = GPU_MEMORY_SIZE;
+    for(auto& model_id: new_cached_models){
+        available_memory -= std::min(available_memory, this->local_ml_models_stats.at(model_id).model_size);  // avoid negative value
+    }
+    this->local_available_memory.store(available_memory);
 }
 
 template <typename... CascadeTypes>
@@ -3021,6 +3028,70 @@ std::string CascadeContext<CascadeTypes...>::local_cached_info_dump() {
 
 
 template <typename... CascadeTypes>
+node_id_t CascadeContext<CascadeTypes...>::next_task_scheduled_node_id(bool& scheduled, 
+                                                                       const std::string& task_name, 
+                                                                       const std::string& adfg){
+    int64_t task_rank = this->get_task_ranking(task_name);
+    scheduled = false;
+    node_id_t scheduled_node_id = 0;
+    // 1. Check if the task is scheduled, and get the allocated node_id in adfg using task_rank
+    if(task_rank != -1){
+        int64_t position = task_rank;
+        std::regex rgx(",");
+        std::sregex_token_iterator end;
+        std::sregex_token_iterator iter(adfg.begin(), adfg.end(), rgx, -1);
+        for(; iter != end; iter++){
+            if(position == 0){
+                scheduled = true;
+                scheduled_node_id = static_cast<uint32_t>(std::stoul(*iter));
+                break;
+            }
+            position --;
+        }
+    }
+    if(!scheduled){
+        dbg_default_warn("CascadeContext::next_task_scheduled_node_id task {} is not scheduled", task_name);
+        return 0;
+    }
+    // 2. Check if the intially assigned worker is still a good choice. If not, re-schedule
+    auto& task_info = prefix_to_task_info[task_name];
+    uint64_t wait_threashold = RESCHEDULE_THREASHOLD_FACTOR * task_info.expected_execution_timeus;
+    bool require_reschedule = this->check_queue_wait_time(scheduled_node_id) > wait_threashold;
+    // only re-schedule if the task is not a joint task in the dfg
+    require_reschedule = require_reschedule & (task_info.required_objects_pathnames.size() < 2); 
+    // 3. Re-schedule the task
+    if(require_reschedule){
+        node_id_t local_node_id = this->get_service_client_ref().get_my_id();
+        std::vector<node_id_t> workers_set = this->get_service_client_ref().get_members();
+        workers_set.erase(std::remove(workers_set.begin(), workers_set.end(), 0), workers_set.end()); // TODO: change this to config/auto condition phrase
+        uint64_t min_wait_time = UINT64_MAX;
+        for(const auto& cur_worker: workers_set){
+            uint64_t cur_wait_time = this->check_queue_wait_time(cur_worker);
+            uint64_t model_fetch_time = 0;
+            uint64_t cur_available_memory = this->group_available_memory[cur_worker];
+            if(cur_worker == local_node_id){
+                cur_available_memory = this->local_available_memory;
+            }
+            for(auto& model_info: task_info.models_info){
+                if(!this->check_if_model_in_gpu(cur_worker, model_info.model_id)){
+                    model_fetch_time += host_to_GPU_delay(model_info.model_size);
+                    // count for delay because of model eviction due to memory limit
+                    if(cur_available_memory < model_info.model_size){
+                        model_fetch_time += host_to_GPU_delay(model_info.model_size);   // use host_to_GPU_delay to estimate model eviction delay
+                    }
+                }
+            }
+            if(cur_wait_time + model_fetch_time < min_wait_time){
+                min_wait_time = cur_wait_time + model_fetch_time;
+                scheduled_node_id = cur_worker;
+            }
+        }
+    }
+    return scheduled_node_id;
+}
+
+
+template <typename... CascadeTypes>
 std::string CascadeContext<CascadeTypes...>::tide_scheduler(std::string entry_prefix){
     // vertex pathname -> (node_id, finish_time(us))
     // in the algorithm denote task ~ vertex pathname
@@ -3029,10 +3100,12 @@ std::string CascadeContext<CascadeTypes...>::tide_scheduler(std::string entry_pr
     /** remove node_id 0 from worker_set, since it is metadata server
      * This require node0 to have both metadata service and at least one of VCSS/PCSS/TCSS shard, so that it can process trigger_put. 
      * Otherwise, uncomment below line.
-     * TODO: change this hard-coded to config/auto condition phrase
+     * TODO: change this to config/auto condition phrase
     */
     workers_set.erase(std::remove(workers_set.begin(), workers_set.end(), 0), workers_set.end());
+    node_id_t local_node_id = this->get_service_client_ref().get_my_id();
     std::unordered_map<node_id_t, uint64_t>  c_group_available_memory = this->group_available_memory;
+    c_group_available_memory[local_node_id] = this->local_available_memory.load();
 
     auto it = this->prefix_to_task_info.find(entry_prefix);
     if(it == this->prefix_to_task_info.end()){
@@ -3042,7 +3115,6 @@ std::string CascadeContext<CascadeTypes...>::tide_scheduler(std::string entry_pr
     DataFlowGraph::TaskInfo& entry_task_info = this->prefix_to_task_info[entry_prefix];
 
     uint64_t cur_us = get_time_us(true);
-    node_id_t local_node_id = this->get_service_client_ref().get_my_id();
     std::vector<std::string>& tasks_rankings = entry_task_info.tasks_rankings_in_dfg;
     std::unordered_map<node_id_t, uint64_t> earliest_available_times;
     for(auto& node_id : workers_set){
