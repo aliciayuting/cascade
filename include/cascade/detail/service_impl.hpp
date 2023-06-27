@@ -2469,9 +2469,15 @@ void CascadeContext<CascadeTypes...>::fire_scheduler(Action&& action,uint32_t wo
     dbg_default_trace("-- -- fire_scheduler[{}] for action key: [{}]", worker_id, action.key_string);
     std::string vertex_pathname = (action.key_string).substr(0, action.prefix_length);
     uint64_t before_scheduler_us = get_time_us(true);
-    // std::string key = (action.key_string).substr(action.prefix_length);
-    // action.adfg = this->hash_scheduler(vertex_pathname, key);
-    action.adfg = this->tide_scheduler(vertex_pathname);   // Note: remember to save adfg to objectWithStringKey at emit() 
+    switch(SCHEDULER_TYPE){
+        case 0:
+            action.adfg = this->tide_scheduler(vertex_pathname);   // Note: remember to save adfg to objectWithStringKey at emit() 
+            break;
+        case 1:
+            std::string key = (action.key_string).substr(action.prefix_length);
+            action.adfg = this->hash_scheduler(vertex_pathname, key);
+            break;
+    }
     uint64_t after_scheduler_us = get_time_us(true);
     dbg_default_trace("~~~ vertex_pathname: {}, scheduled adfg: {}, time[{}]us", vertex_pathname, action.adfg, after_scheduler_us - before_scheduler_us);
     if(!action.adfg.empty()){
@@ -3055,6 +3061,9 @@ node_id_t CascadeContext<CascadeTypes...>::next_task_scheduled_node_id(bool& sch
     if(!scheduled){
         dbg_default_warn("CascadeContext::next_task_scheduled_node_id task {} is not scheduled", task_name);
         return 0;
+    }
+    if(SCHEDULER_TYPE != 0){ // experiment purposes
+        return scheduled_node_id;
     }
     // 2. Check if the intially assigned worker is still a good choice. If not, re-schedule
     auto& task_info = prefix_to_task_info[task_name];

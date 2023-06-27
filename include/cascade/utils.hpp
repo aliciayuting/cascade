@@ -400,7 +400,13 @@ public:
  * If the worker_waittime > task execution time * RESCHEDULE_THREASHOLD_FACTOR
  * the reschedule the task.
 */
-#define RESCHEDULE_THREASHOLD_FACTOR                (1)
+#define RESCHEDULE_THREASHOLD_FACTOR                (1.5)
+
+/** 
+ * Flag for experimentation purposes
+ * 0 : TIDE | 1: HASH
+*/
+#define SCHEDULER_TYPE                              (0)
 
 /*
  * For UDLs:
