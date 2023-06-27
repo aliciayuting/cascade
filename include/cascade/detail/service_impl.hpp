@@ -2425,8 +2425,6 @@ void CascadeContext<CascadeTypes...>::workhorse(uint32_t worker_id, struct actio
     while(is_running) {
         // waiting for an action
         Action action = std::move(aq.action_buffer_dequeue(is_running));
-        this->local_queue_wait_time -= std::min(action.expected_execution_timeus, this->local_queue_wait_time.load()); // avoid negative value
-        this->get_service_client_ref().send_local_queue_wait_time(this->local_queue_wait_time);
         action.fire(this,worker_id);
         if(!is_running) {
             do {
@@ -2435,6 +2433,8 @@ void CascadeContext<CascadeTypes...>::workhorse(uint32_t worker_id, struct actio
                 action.fire(this, worker_id);
             } while(true);
         }
+        this->local_queue_wait_time -= std::min(action.expected_execution_timeus, this->local_queue_wait_time.load()); // avoid negative value
+        this->get_service_client_ref().send_local_queue_wait_time(this->local_queue_wait_time);
     }
     dbg_default_trace("Cascade context workhorse[{}] finished normally.", static_cast<uint64_t>(gettid()));
 }
@@ -2862,22 +2862,21 @@ bool CascadeContext<CascadeTypes...>::post(Action&& action, bool is_trigger) {
 #ifdef HAS_STATEFUL_UDL_SUPPORT
                     break;
                 case DataFlowGraph::Statefulness::SINGLETHREADED:
-                    bool task_with_same;
+                    bool emplace_to_existing_queued_task = false;
                     // check if action is in single_threaded_action_queue_for_p2p, if it is add_value_ptr to that action                    
                     if(action.required_object_pathnames.size() > 1){
-                        task_with_same = single_threaded_action_queue_for_p2p.action_buffer_emplace(action);
-                        if(!task_with_same){
+                        emplace_to_existing_queued_task = single_threaded_action_queue_for_p2p.action_buffer_emplace(action);
+                        if(!emplace_to_existing_queued_task){
                             single_threaded_action_queue_for_p2p.action_buffer_enqueue(std::move(action));
                         }
-                        break;
                     }else{
                         single_threaded_action_queue_for_p2p.action_buffer_enqueue(std::move(action));
-                        break;
                     }
-                    if(!task_with_same){
+                    if(!emplace_to_existing_queued_task){
                         this->local_queue_wait_time += action.expected_execution_timeus;
                         this->get_service_client_ref().send_local_queue_wait_time(this->local_queue_wait_time);
                     }
+                    break;
             }
 #endif
         } else {
@@ -2893,17 +2892,21 @@ bool CascadeContext<CascadeTypes...>::post(Action&& action, bool is_trigger) {
 #ifdef HAS_STATEFUL_UDL_SUPPORT
                     break;
                 case DataFlowGraph::Statefulness::SINGLETHREADED:
+                    bool emplace_to_existing_queued_task = false;
                     // check if action is in single_threaded_action_queue_for_p2p, if it is add_value_ptr to that action                    
                     if(action.required_object_pathnames.size() > 1){
-                        bool task_with_same = single_threaded_action_queue_for_multicast.action_buffer_emplace(action);
-                        if(!task_with_same){
+                        emplace_to_existing_queued_task = single_threaded_action_queue_for_multicast.action_buffer_emplace(action);
+                        if(!emplace_to_existing_queued_task){
                             single_threaded_action_queue_for_multicast.action_buffer_enqueue(std::move(action));
                         }
-                        break;
                     }else{
                         single_threaded_action_queue_for_multicast.action_buffer_enqueue(std::move(action));
-                        break;
                     }
+                    if(!emplace_to_existing_queued_task){
+                        this->local_queue_wait_time += action.expected_execution_timeus;
+                        this->get_service_client_ref().send_local_queue_wait_time(this->local_queue_wait_time);
+                    }
+                    break;
             }
 #endif
         }
