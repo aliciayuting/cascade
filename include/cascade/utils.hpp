@@ -404,7 +404,7 @@ public:
 
 /** 
  * Flag for experimentation purposes
- * 0 : TIDE | 1: HASH
+ * 0 : TIDE | 1: HASH | 2: HEFT
 */
 #define SCHEDULER_TYPE                              (0)
 

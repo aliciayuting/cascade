@@ -3208,6 +3208,69 @@ std::string CascadeContext<CascadeTypes...>::hash_scheduler(std::string entry_pr
 }
 
 template <typename... CascadeTypes>
+std::string CascadeContext<CascadeTypes...>::heft_scheduler(std::string entry_prefix){
+    std::unordered_map<std::string, std::pair<node_id_t,uint64_t>> allocated_tasks_info;
+    std::vector<node_id_t> workers_set = this->get_service_client_ref().get_members();
+    workers_set.erase(std::remove(workers_set.begin(), workers_set.end(), 0), workers_set.end());
+    node_id_t local_node_id = this->get_service_client_ref().get_my_id();
+
+    auto it = this->prefix_to_task_info.find(entry_prefix);
+    if(it == this->prefix_to_task_info.end()){
+        dbg_default_error("CascadeContext::tide_scheduler task_info is empty");
+        return "";
+    }
+    DataFlowGraph::TaskInfo& entry_task_info = this->prefix_to_task_info[entry_prefix];
+
+    uint64_t cur_us = get_time_us(true);
+    std::vector<std::string>& tasks_rankings = entry_task_info.tasks_rankings_in_dfg;
+    std::unordered_map<node_id_t, uint64_t> earliest_available_times;
+    for(auto& node_id : workers_set){
+        earliest_available_times[node_id] = cur_us;
+    }
+    for(auto& task_name: tasks_rankings){
+        auto& task_info = this->prefix_to_task_info[task_name];
+        // 0. PRE-COMPUTE (used later by 2. case1) get the earliest start time, suppose all preq_tasks need to transfer data
+        node_id_t selected_worker_id = INVALID_NODE_ID;
+	    uint64_t earliest_start_time = UINT64_MAX;
+        uint64_t fetching_model_size = 0;
+        for(const auto& cur_worker: workers_set){
+            uint64_t cur_earliest_start_time = cur_us;
+            uint64_t inputs_arrival_time = cur_us;
+            if(task_name == tasks_rankings[0] && cur_worker != local_node_id){
+                    inputs_arrival_time += CPU_to_CPU_delay(task_info.input_size);
+            }
+            for(std::string& preq_task_name: task_info.required_objects_pathnames){
+                auto& preq_task_info = this->prefix_to_task_info[preq_task_name];
+                auto& alloc_info = allocated_tasks_info[preq_task_name];
+                uint64_t arrival_time = alloc_info.second;
+                if(cur_worker != alloc_info.first){
+                    arrival_time += CPU_to_CPU_delay(preq_task_info.output_size);
+                }
+                inputs_arrival_time = std::max(inputs_arrival_time, arrival_time);
+            }
+            cur_earliest_start_time = std::max(cur_earliest_start_time, inputs_arrival_time);
+            cur_earliest_start_time = std::max(earliest_available_times[cur_worker], cur_earliest_start_time);
+            if(cur_earliest_start_time < earliest_start_time){
+                earliest_start_time = cur_earliest_start_time;
+                selected_worker_id = cur_worker;
+            }
+        }
+        if(selected_worker_id == INVALID_NODE_ID){
+            dbg_default_error("CascadeContext::tide_scheduler selected_worker_id == -1");
+            return "";
+        }
+        uint64_t earliest_finish_time = earliest_start_time + GPU_to_GPU_delay(task_info.input_size) + task_info.expected_execution_timeus;
+        allocated_tasks_info[task_name] = {selected_worker_id, earliest_finish_time};
+        earliest_available_times[selected_worker_id] = earliest_finish_time;
+    }
+    std::string allocated_machines;
+    for(auto& pathname: tasks_rankings){
+        allocated_machines +=  std::to_string(allocated_tasks_info.at(pathname).first) + ",";
+    }
+    return allocated_machines;
+}
+
+template <typename... CascadeTypes>
 CascadeContext<CascadeTypes...>::~CascadeContext() {
     destroy();
 }

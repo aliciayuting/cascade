@@ -2052,6 +2052,14 @@ namespace cascade {
         */
         std::string hash_scheduler(std::string entry_prefix, std::string entry_key);
 
+        /**
+         * given a prefix of the first task of the dfg generage the adfg result for this instance
+         * @param entry_prefix  entry task pathname
+         * @param entry_key     entry task key with prefix removed
+         * @return adfg encoded to string
+        */
+        std::string heft_scheduler(std::string entry_prefix);
+
 
         /**
          * Destructor
