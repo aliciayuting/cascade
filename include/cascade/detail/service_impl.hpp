@@ -2473,9 +2473,12 @@ void CascadeContext<CascadeTypes...>::fire_scheduler(Action&& action,uint32_t wo
         case 0:
             action.adfg = this->tide_scheduler(vertex_pathname);   // Note: remember to save adfg to objectWithStringKey at emit() 
             break;
-        case 1:
+        case 1: {
             std::string key = (action.key_string).substr(action.prefix_length);
             action.adfg = this->hash_scheduler(vertex_pathname, key);
+        }break;
+        case 2:
+            action.adfg = this->heft_scheduler(vertex_pathname);
             break;
     }
     uint64_t after_scheduler_us = get_time_us(true);
