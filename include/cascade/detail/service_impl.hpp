@@ -3235,7 +3235,6 @@ std::string CascadeContext<CascadeTypes...>::heft_scheduler(std::string entry_pr
         // 0. PRE-COMPUTE (used later by 2. case1) get the earliest start time, suppose all preq_tasks need to transfer data
         node_id_t selected_worker_id = INVALID_NODE_ID;
 	    uint64_t earliest_start_time = UINT64_MAX;
-        uint64_t fetching_model_size = 0;
         for(const auto& cur_worker: workers_set){
             uint64_t cur_earliest_start_time = cur_us;
             uint64_t inputs_arrival_time = cur_us;
