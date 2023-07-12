@@ -1642,7 +1642,7 @@ namespace cascade {
         void get_updated_group_cached_models_info(
                                             std::unordered_map<node_id_t, std::set<uint32_t>>& _group_cached_models_info,
                                             std::unordered_map<node_id_t, uint64_t>& _group_available_memory,
-                                            const std::unordered_map<uint64_t, MLModelStats>&   _local_ml_models_stats);
+                                            const std::unordered_map<uint32_t, MLModelStats>&   _local_ml_models_stats);
 
         /**
          * Get the updated load_info of all nodes in the group from derechoSST
@@ -1794,14 +1794,12 @@ namespace cascade {
          * mapping between {entry_pathname of the dfg -> DataFlowGraph::TaskInfo}
          */
         std::unordered_map<std::string, DataFlowGraph::TaskInfo> prefix_to_task_info;
+        std::atomic<uint64_t>       local_queue_wait_time;
+        std::atomic<uint64_t>       local_available_memory;
+        std::vector<uint32_t>                           local_cached_model_ids;
         // mapping betwee {model_id -> MLModelStats}, used by scheduler to decide which model to load/evict
-        std::unordered_map<uint64_t, MLModelStats>      local_ml_models_stats;
-
-        std::atomic<uint64_t>   local_queue_wait_time;
-        std::set<uint32_t>      local_cached_models_info;
-        std::atomic<uint64_t>      local_available_memory;
-        mutable std::shared_mutex local_cached_models_info_mutex;
-        std::atomic<bool>         local_cached_models_info_updated;
+        std::unordered_map<uint32_t, MLModelStats>      local_ml_models_stats;
+        mutable std::shared_mutex                       local_cached_model_info_mutex;
 
         std::unordered_map<node_id_t, std::set<uint32_t>>  group_cached_models_info; // include all other nodes info, beside this node
         std::unordered_map<node_id_t, uint64_t>            group_available_memory; // derived from group_cached_models_info
@@ -2015,15 +2013,45 @@ namespace cascade {
         std::vector<DataFlowGraph::MLModelInfo> get_required_models_info(std::string pathname);
 
         /**
-         * update local_cached_models_info, called
-         * when there is local model fetching or eviction to GPU memory on this node.
+         * Helper function to models_to_fetch_and_evict(), 
+         * invoked when there is local model fetching or eviction to GPU memory on this node.
+         * @param models_to_fetch   the models about to be fetched to the GPU memory
+         * @param models_to_evict   the models about to be evicted from the GPU memory
+         * @param new_gpu_available_memory   the new available memory after models fetching and eviction 
         */
-        void update_local_model_info(std::set<uint32_t> new_cached_models);
-        
+        void update_local_model_info(const std::vector<uint32_t>& models_to_fetch,
+                                     const std::vector<uint32_t>& models_to_evict,
+                                     const uint64_t& new_gpu_available_memory);
+
         /**
-         * send local_cached_models_info to all nodes in the group
+        * send local_cached_models_info to all nodes in the group
         */
-       void send_local_cached_models_info();
+        void send_local_cached_models_info();
+
+        /**
+         * Helper function to models_to_fetch_and_evict()
+         * decide which models to evict from GPU memeory
+         * @param  models_to_evict      the models to evict, to be filled in this function
+         * @param  required_models      the required models for the pathname
+         * @param  required_memory      the required memory for the pathname
+         * @return the total memory after the models evicted
+        */
+        uint64_t select_models_to_evict(std::vector<uint32_t>& models_to_evict,
+                                        const std::vector<DataFlowGraph::MLModelInfo>& required_model_info, 
+                                        const std::uint64_t& required_memory);
+
+        /**
+         * GPU memory management:
+         * evict and fetch models to/from GPU memory, according to the eviction policy
+         * @param  pathname             the pathname of the entry vertex of the dfg
+         * @param  models_to_fetch      the models to fetch, to be filled in this function
+         * @param  models_to_evict      the models to evict, to be filled in this function
+         * @return True if there are ways to arrange the GPU memory to satisfy the pathname required models
+         *         False if there is no way
+        */
+        bool models_to_fetch_and_evict(std::string pathname,
+                                        std::vector<uint32_t>& models_to_fetch,
+                                        std::vector<uint32_t>& models_to_evict);
 
         /** Helper function to check local cached group_cached_models_info and group_queue_wait_times
         */

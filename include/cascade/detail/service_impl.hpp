@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <cascade/config.h>
 #include <cascade/data_flow_graph.hpp>
+#include <cassert>
 #include <chrono>
 #include <derecho/core/derecho.hpp>
 #include <derecho/core/derecho_exception.hpp>
@@ -2162,7 +2163,7 @@ template <typename... CascadeTypes>
 void ServiceClient<CascadeTypes...>::get_updated_group_cached_models_info(
                                     std::unordered_map<node_id_t, std::set<uint32_t>>& _group_cached_models_info, 
                                     std::unordered_map<node_id_t, uint64_t>& _group_available_memory,
-                                    const std::unordered_map<uint64_t, MLModelStats>&   _local_ml_models_stats) {
+                                    const std::unordered_map<uint32_t, MLModelStats>&   _local_ml_models_stats) {
     _group_cached_models_info.clear();
     std::vector<node_id_t> nodes = group_ptr->get_members();
     for(node_id_t node_id : nodes){
@@ -2172,7 +2173,7 @@ void ServiceClient<CascadeTypes...>::get_updated_group_cached_models_info(
         for(int k = 0; k < 64; ++k){
             if((encoded_models >> k) & 1){
                 decoded_models.emplace(k);
-                available_memory -= std::min(available_memory, _local_ml_models_stats.at((uint64_t)k).model_size); // avoid negative value
+                available_memory -= std::min(available_memory, _local_ml_models_stats.at((uint32_t)k).model_size); // avoid negative value
             }
         }
         _group_cached_models_info[node_id] = decoded_models;
@@ -2455,9 +2456,6 @@ void CascadeContext<CascadeTypes...>::tide_scheduler_workhorse(uint32_t worker_i
                 if(!action) break;  
                 this->fire_scheduler(std::move(action), worker_id);
             } while(true);
-        }
-        if(local_cached_models_info_updated){
-            this->send_local_cached_models_info();
         }
     }
     dbg_default_trace("Cascade context workhorse[{}] finished normally.", static_cast<uint64_t>(gettid()));
@@ -2968,9 +2966,9 @@ uint64_t CascadeContext<CascadeTypes...>::check_queue_wait_time(node_id_t node_i
 template <typename... CascadeTypes>
 bool CascadeContext<CascadeTypes...>::check_if_model_in_gpu(node_id_t node_id, uint32_t model_id) {
     if(node_id ==  this->get_service_client_ref().get_my_id()){
-        std::shared_lock rlck(this->local_cached_models_info_mutex);
-        bool exist_model_in_gpu = this->local_cached_models_info.find(model_id) != this->local_cached_models_info.end();
-        return exist_model_in_gpu;
+        std::shared_lock rlck(this->local_cached_model_info_mutex);
+        auto it = std::find(this->local_cached_model_ids.begin(), this->local_cached_model_ids.end(), model_id);
+        return it != this->local_cached_model_ids.end();
     }
     uint64_t cur_us = get_time_us(true);
     auto interval = 1000000 / derecho::getConfUInt32(CACHE_INFO_DISSEMINATION_RATE);
@@ -3000,23 +2998,89 @@ std::vector<DataFlowGraph::MLModelInfo> CascadeContext<CascadeTypes...>::get_req
 
 
 template <typename... CascadeTypes>
-void CascadeContext<CascadeTypes...>::update_local_model_info(std::set<uint32_t> new_cached_models){
-    std::unique_lock wlck(this->local_cached_models_info_mutex);
-    this->local_cached_models_info = new_cached_models;
-    this->local_cached_models_info_updated = true;
-    uint64_t available_memory = GPU_MEMORY_SIZE;
-    for(auto& model_id: new_cached_models){
-        available_memory -= std::min(available_memory, this->local_ml_models_stats.at(model_id).model_size);  // avoid negative value
-    }
-    this->local_available_memory.store(available_memory);
+void CascadeContext<CascadeTypes...>::update_local_model_info(const std::vector<uint32_t>& models_to_fetch,
+                                                              const std::vector<uint32_t>& models_to_evict,
+                                                              const uint64_t& new_gpu_available_memory){
+    this->local_cached_model_ids.erase(std::remove_if(this->local_cached_model_ids.begin(), 
+                                        this->local_cached_model_ids.end(), 
+                                        [&models_to_evict](int model) {
+                                            return std::find(models_to_evict.begin(), models_to_evict.end(), model) != models_to_evict.end();
+                                        }), 
+                                        this->local_cached_model_ids.end());
+    this->local_cached_model_ids.insert(this->local_cached_model_ids.end(), models_to_fetch.begin(), models_to_fetch.end());
+    this->local_available_memory.store(new_gpu_available_memory);
 }
 
 template <typename... CascadeTypes>
 void CascadeContext<CascadeTypes...>::send_local_cached_models_info(){
-    std::shared_lock<std::shared_mutex> rlck(this->local_cached_models_info_mutex);
-    this->get_service_client_ref().send_local_cached_models_info_to_group(this->local_cached_models_info);
-    this->local_cached_models_info_updated = false;
+    std::set<uint32_t> _model_ids(this->local_cached_model_ids.begin(), this->local_cached_model_ids.end());
+    bool ALICIA_DEBUG = true;
+    if(ALICIA_DEBUG){
+        assert(_model_ids.size() == this->local_cached_model_ids.size());
+    }
+    this->get_service_client_ref().send_local_cached_models_info_to_group(_model_ids);
 }
+
+template <typename... CascadeTypes>
+uint64_t CascadeContext<CascadeTypes...>::select_models_to_evict(std::vector<uint32_t>& models_to_evict,
+                                                            const std::vector<DataFlowGraph::MLModelInfo>& required_model_info, 
+                                                            const std::uint64_t& required_memory){
+    uint64_t GPU_avaialble_memory = this->local_available_memory.load();
+    // FIFO eviction policy
+    if(EVICTION_POLICY == 0){
+        auto it = this->local_cached_model_ids.begin();
+        while( it != this->local_cached_model_ids.end() ) {
+            if(required_memory <= GPU_avaialble_memory){
+                return true;
+            }
+            int32_t model_id = (int32_t)*it;
+            // check if the model is required by this task, if so then skip it
+            auto required_model_it = std::find_if(required_model_info.begin(), required_model_info.end(),[model_id](const DataFlowGraph::MLModelInfo& model){
+                                                    return model.model_id == model_id;    
+                                                });
+            if(required_model_it != required_model_info.end()){
+                it ++;
+                continue;
+            }
+            models_to_evict.emplace_back(model_id);
+            GPU_avaialble_memory += local_ml_models_stats[model_id].model_size;
+            it = this->local_cached_model_ids.erase(it); 
+        }
+    }
+    return GPU_avaialble_memory;
+}
+
+template <typename... CascadeTypes>
+bool CascadeContext<CascadeTypes...>::models_to_fetch_and_evict(std::string pathname,
+                                                                std::vector<uint32_t>& models_to_fetch,
+                                                                std::vector<uint32_t>& models_to_evict){
+    std::unique_lock wlck(this->local_cached_model_info_mutex);
+    uint64_t required_memory = 0;
+    std::vector<DataFlowGraph::MLModelInfo> required_model_info = this->get_required_models_info(pathname);
+    if(required_model_info.empty()){
+        return true;
+    }
+    // 1. Collect the model IDs required but not currently in GPU memory
+    for(const auto& model: required_model_info){
+        if(std::find(this->local_cached_model_ids.begin(), this->local_cached_model_ids.end(), model.model_id) == this->local_cached_model_ids.end()){
+            models_to_fetch.emplace_back(model.model_id);
+            required_memory += model.model_size;
+        }
+    }
+    // 2. select models to be removed from GPU memory, below function also updates local_cached_model_ids
+    uint64_t gpu_memory_after_eviction = select_models_to_evict(models_to_evict, required_model_info, required_memory);
+    uint64_t new_gpu_available_memory = gpu_memory_after_eviction - required_memory;
+    if(new_gpu_available_memory < 0){
+        dbg_default_warn("GPU memory is not enough to hold the required models");
+        return false;
+    }
+    if(!models_to_fetch.empty() || !models_to_evict.empty()){
+        this->update_local_model_info(models_to_fetch, models_to_evict, new_gpu_available_memory);
+        this->send_local_cached_models_info();
+    }
+    return true;
+}
+
 
 template <typename... CascadeTypes>
 std::string CascadeContext<CascadeTypes...>::local_cached_info_dump() {
