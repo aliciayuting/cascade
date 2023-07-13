@@ -406,7 +406,12 @@ public:
  * Flag for experimentation purposes
  * 0 : TIDE | 1: HASH | 2: HEFT
 */
-#define SCHEDULER_TYPE                              (0)
+#define SCHEDULER_TYPE                              (2)
+/**
+ * Flag for experimentation purposes
+ * 0 : FIFO | 1: LookAheadEvict
+*/
+#define EVICTION_POLICY                             (0)
 
 /*
  * For UDLs:

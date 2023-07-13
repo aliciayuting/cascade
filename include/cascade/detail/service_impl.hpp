@@ -2272,7 +2272,7 @@ void CascadeContext<CascadeTypes...>::construct() {
             prefix_to_task_info.emplace(vertex.first, vertex.second.task_info);
             for(auto& model_info: vertex.second.task_info.models_info){
                 MLModelStats model_stats = {model_info.model_size, 0, 0};
-                local_ml_models_stats.emplace(model_info.model_id, model_stats);
+                this->local_ml_models_stats.emplace(model_info.model_id, model_stats);
             }
         }
         // Testing purposes
@@ -2436,6 +2436,9 @@ void CascadeContext<CascadeTypes...>::workhorse(uint32_t worker_id, struct actio
         }
         this->local_queue_wait_time -= std::min(action.expected_execution_timeus, this->local_queue_wait_time.load()); // avoid negative value
         this->get_service_client_ref().send_local_queue_wait_time(this->local_queue_wait_time);
+        if(this->local_cached_models_info_updated.load()){
+            this->send_local_cached_models_info();
+        }
     }
     dbg_default_trace("Cascade context workhorse[{}] finished normally.", static_cast<uint64_t>(gettid()));
 }
@@ -3013,12 +3016,15 @@ void CascadeContext<CascadeTypes...>::update_local_model_info(const std::vector<
 
 template <typename... CascadeTypes>
 void CascadeContext<CascadeTypes...>::send_local_cached_models_info(){
+    std::shared_lock rlck(this->local_cached_model_info_mutex);
     std::set<uint32_t> _model_ids(this->local_cached_model_ids.begin(), this->local_cached_model_ids.end());
     bool ALICIA_DEBUG = true;
     if(ALICIA_DEBUG){
-        assert(_model_ids.size() == this->local_cached_model_ids.size());
+        assert(_model_ids.size() == this->local_cached_model_ids.size() && "local_cached_model_ids contains duplication");
+        assert(this->gpu_available_memory < GPU_MEMORY_SIZE && "gpu_available_memory is larger than GPU_MEMORY_SIZE");
     }
     this->get_service_client_ref().send_local_cached_models_info_to_group(_model_ids);
+    this->local_cached_models_info_updated.store(false);
 }
 
 template <typename... CascadeTypes>
@@ -3031,7 +3037,7 @@ uint64_t CascadeContext<CascadeTypes...>::select_models_to_evict(std::vector<uin
         auto it = this->local_cached_model_ids.begin();
         while( it != this->local_cached_model_ids.end() ) {
             if(required_memory <= GPU_avaialble_memory){
-                return true;
+                return GPU_avaialble_memory;
             }
             int32_t model_id = (int32_t)*it;
             // check if the model is required by this task, if so then skip it
@@ -3043,7 +3049,7 @@ uint64_t CascadeContext<CascadeTypes...>::select_models_to_evict(std::vector<uin
                 continue;
             }
             models_to_evict.emplace_back(model_id);
-            GPU_avaialble_memory += local_ml_models_stats[model_id].model_size;
+            GPU_avaialble_memory += this->local_ml_models_stats[model_id].model_size;
             it = this->local_cached_model_ids.erase(it); 
         }
     }
@@ -3068,7 +3074,7 @@ bool CascadeContext<CascadeTypes...>::models_to_fetch_and_evict(std::string path
         }
     }
     // 2. select models to be removed from GPU memory, below function also updates local_cached_model_ids
-    uint64_t gpu_memory_after_eviction = select_models_to_evict(models_to_evict, required_model_info, required_memory);
+    uint64_t gpu_memory_after_eviction = this->select_models_to_evict(models_to_evict, required_model_info, required_memory);
     uint64_t new_gpu_available_memory = gpu_memory_after_eviction - required_memory;
     if(new_gpu_available_memory < 0){
         dbg_default_warn("GPU memory is not enough to hold the required models");
@@ -3076,7 +3082,7 @@ bool CascadeContext<CascadeTypes...>::models_to_fetch_and_evict(std::string path
     }
     if(!models_to_fetch.empty() || !models_to_evict.empty()){
         this->update_local_model_info(models_to_fetch, models_to_evict, new_gpu_available_memory);
-        this->send_local_cached_models_info();
+        this->local_cached_models_info_updated.store(true);
     }
     return true;
 }
@@ -3233,7 +3239,6 @@ std::string CascadeContext<CascadeTypes...>::tide_scheduler(std::string entry_pr
                     cur_fetching_model_size += model_info.model_size;
                 }
             }
-            /*** ALICIA TODO: take into account of allocations in this round */
             cur_earliest_start_time = std::max(earliest_available_times[cur_worker], cur_earliest_start_time) + model_fetch_time;
             if(cur_earliest_start_time < earliest_start_time){
                 earliest_start_time = cur_earliest_start_time;

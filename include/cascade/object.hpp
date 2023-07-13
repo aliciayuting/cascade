@@ -108,7 +108,6 @@ public:
     mutable persistent::version_t                       previous_version; // previous version, INVALID_VERSION for the first version
     mutable persistent::version_t                       previous_version_by_key; // previous version by key, INVALID_VERSION for the first value of the key.
     uint64_t                                            key; // object_id
-    /** TODO: better data structure for adfg, use fixed size array instead*/
     std::string                                         adfg;                    // activation DFG, for event-driven scheduler
     Blob                                                blob; // the object
 

@@ -130,8 +130,6 @@ public:
         SINGLETHREADED,
     };
 
-    /** TODO: Next step
-     * Maybe should split MLModel descriptor from dfg file and include more information*/
     struct MLModelInfo{
         int32_t model_id = -1;
         uint64_t model_size = 0; // in KB
@@ -142,7 +140,6 @@ public:
     
     struct TaskInfo{
         std::vector<std::string> required_objects_pathnames; 
-        /** TODO: expand this, since each task may require multiple models!! */
         std::vector<MLModelInfo> models_info;
         uint32_t input_size = 0; 
         uint32_t output_size = 0;

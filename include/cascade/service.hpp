@@ -1800,6 +1800,7 @@ namespace cascade {
         // mapping betwee {model_id -> MLModelStats}, used by scheduler to decide which model to load/evict
         std::unordered_map<uint32_t, MLModelStats>      local_ml_models_stats;
         mutable std::shared_mutex                       local_cached_model_info_mutex;
+        std::atomic<bool>                               local_cached_models_info_updated;
 
         std::unordered_map<node_id_t, std::set<uint32_t>>  group_cached_models_info; // include all other nodes info, beside this node
         std::unordered_map<node_id_t, uint64_t>            group_available_memory; // derived from group_cached_models_info
