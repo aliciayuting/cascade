@@ -670,6 +670,7 @@ ObjectWithStringKey::ObjectWithStringKey(const std::string& _key,
     timestamp_us(0),
     previous_version(INVALID_VERSION),
     previous_version_by_key(INVALID_VERSION),
+    num_reallocate(0),
     key(_key),
     adfg(),
     source_key(),
@@ -693,6 +694,7 @@ ObjectWithStringKey::ObjectWithStringKey(
     timestamp_us(_timestamp_us),
     previous_version(_previous_version),
     previous_version_by_key(_previous_version_by_key),
+    num_reallocate(0),
     key(_key), 
     adfg(),
     source_key(),
@@ -706,6 +708,7 @@ ObjectWithStringKey::ObjectWithStringKey(
                                          const uint64_t _timestamp_us,
                                          const persistent::version_t _previous_version,
                                          const persistent::version_t _previous_version_by_key,
+                                         const uint64_t _num_reallocate,
                                          const std::string& _key,
                                          const std::string& _adfg,
                                          const std::string& _source_key,
@@ -718,6 +721,7 @@ ObjectWithStringKey::ObjectWithStringKey(
     timestamp_us(_timestamp_us),
     previous_version(_previous_version),
     previous_version_by_key(_previous_version_by_key),
+    num_reallocate(_num_reallocate),
     key(_key), 
     adfg(_adfg),
     source_key(_source_key),
@@ -734,6 +738,7 @@ ObjectWithStringKey::ObjectWithStringKey(const std::string& _key,
     timestamp_us(0),
     previous_version(INVALID_VERSION),
     previous_version_by_key(INVALID_VERSION),
+    num_reallocate(0),
     key(_key),
     adfg(),
     source_key(),
@@ -757,13 +762,15 @@ ObjectWithStringKey::ObjectWithStringKey(
     timestamp_us(_timestamp_us),
     previous_version(_previous_version),
     previous_version_by_key(_previous_version_by_key),
+    num_reallocate(0),
     key(_key), 
     adfg(),
     source_key(),
     blob(_b, _s) {}
 
 // constructor 2 : copy consotructor with adfg
-ObjectWithStringKey::ObjectWithStringKey(const std::string& _key,
+ObjectWithStringKey::ObjectWithStringKey(const uint64_t _num_reallocate,
+                                         const std::string& _key,
                                          const std::string& _adfg,
                                          const std::string& _source_key,
                                          const uint8_t* const _b, 
@@ -775,6 +782,7 @@ ObjectWithStringKey::ObjectWithStringKey(const std::string& _key,
     timestamp_us(0),
     previous_version(INVALID_VERSION),
     previous_version_by_key(INVALID_VERSION),
+    num_reallocate(_num_reallocate),
     key(_key),
     adfg(_adfg),
     source_key(_source_key),
@@ -789,6 +797,7 @@ ObjectWithStringKey::ObjectWithStringKey(
                                          const uint64_t _timestamp_us,
                                          const persistent::version_t _previous_version,
                                          const persistent::version_t _previous_version_by_key,
+                                         const uint64_t _num_reallocate,
                                          const std::string& _key,
                                          const std::string& _adfg,
                                          const std::string& _source_key,
@@ -801,6 +810,7 @@ ObjectWithStringKey::ObjectWithStringKey(
     timestamp_us(_timestamp_us),
     previous_version(_previous_version),
     previous_version_by_key(_previous_version_by_key),
+    num_reallocate(_num_reallocate),
     key(_key), 
     adfg(_adfg),
     source_key(_source_key),
@@ -815,6 +825,7 @@ ObjectWithStringKey::ObjectWithStringKey(ObjectWithStringKey&& other) :
     timestamp_us(other.timestamp_us),
     previous_version(other.previous_version),
     previous_version_by_key(other.previous_version_by_key),
+    num_reallocate(other.num_reallocate),
     key(other.key),
     adfg(other.adfg),
     source_key(other.source_key),
@@ -829,6 +840,7 @@ ObjectWithStringKey::ObjectWithStringKey(const ObjectWithStringKey& other) :
     timestamp_us(other.timestamp_us),
     previous_version(other.previous_version),
     previous_version_by_key(other.previous_version_by_key),
+    num_reallocate(other.num_reallocate),
     key(other.key),
     adfg(other.adfg),
     source_key(other.source_key),
@@ -843,6 +855,7 @@ ObjectWithStringKey::ObjectWithStringKey() :
     timestamp_us(0),
     previous_version(INVALID_VERSION),
     previous_version_by_key(INVALID_VERSION),
+    num_reallocate(0),
     key(),
     adfg(),
     source_key() {}
@@ -858,6 +871,7 @@ ObjectWithStringKey::ObjectWithStringKey(const std::string& _key,
     timestamp_us(0),
     previous_version(INVALID_VERSION),
     previous_version_by_key(INVALID_VERSION),
+    num_reallocate(0),
     key(_key),
     adfg(),
     source_key(),
@@ -882,6 +896,7 @@ ObjectWithStringKey::ObjectWithStringKey(
     timestamp_us(_timestamp_us),
     previous_version(_previous_version),
     previous_version_by_key(_previous_version_by_key),
+    num_reallocate(0),
     key(_key),
     adfg(),
     source_key(),
@@ -903,6 +918,7 @@ void ObjectWithStringKey::copy_from(const ObjectWithStringKey& rhs) {
     this->timestamp_us = rhs.timestamp_us;
     this->previous_version = rhs.previous_version;
     this->previous_version_by_key = rhs.previous_version_by_key;
+    this->num_reallocate = rhs.num_reallocate;
     this->key = rhs.key;
     this->adfg = rhs.adfg;
     this->source_key = rhs.source_key;
@@ -957,6 +973,14 @@ const std::string& ObjectWithStringKey::get_source_key() const {
     return this->source_key;
 }
 
+void ObjectWithStringKey::set_num_reallocate(uint64_t new_num_reallocate) {
+    this->num_reallocate = new_num_reallocate;
+}
+
+uint64_t ObjectWithStringKey::get_num_reallocate() const {
+    return this->num_reallocate;
+}
+
 #ifdef ENABLE_EVALUATION
 void ObjectWithStringKey::set_message_id(uint64_t id) const {
     this->message_id = id;
@@ -981,6 +1005,7 @@ std::size_t ObjectWithStringKey::to_bytes(uint8_t* v) const {
     pos+=mutils::to_bytes(timestamp_us, v + pos);
     pos+=mutils::to_bytes(previous_version, v + pos);
     pos+=mutils::to_bytes(previous_version_by_key, v + pos);
+    pos+=mutils::to_bytes(num_reallocate, v + pos);
     pos+=mutils::to_bytes(key, v + pos);
     pos+=mutils::to_bytes(adfg, v + pos);
     pos+=mutils::to_bytes(source_key, v + pos);
@@ -997,6 +1022,7 @@ std::size_t ObjectWithStringKey::bytes_size() const {
            mutils::bytes_size(timestamp_us) +
            mutils::bytes_size(previous_version) +
            mutils::bytes_size(previous_version_by_key) +
+           mutils::bytes_size(num_reallocate) +
            mutils::bytes_size(key) +
            mutils::bytes_size(adfg) + 
            mutils::bytes_size(source_key) +
@@ -1011,8 +1037,10 @@ void ObjectWithStringKey::post_object(const std::function<void(uint8_t const* co
     mutils::post_object(f, timestamp_us);
     mutils::post_object(f, previous_version);
     mutils::post_object(f, previous_version_by_key);
+    mutils::post_object(f, num_reallocate);
     mutils::post_object(f, key);
     mutils::post_object(f, adfg);
+    mutils::post_object(f, source_key);
     mutils::post_object(f, blob);
 }
 
@@ -1030,6 +1058,8 @@ std::unique_ptr<ObjectWithStringKey> ObjectWithStringKey::from_bytes(mutils::Des
     pos += mutils::bytes_size(*p_previous_version);
     auto p_previous_version_by_key = mutils::from_bytes_noalloc<persistent::version_t>(dsm,v + pos);
     pos += mutils::bytes_size(*p_previous_version);
+    auto p_num_reallocate = mutils::from_bytes_noalloc<uint64_t>(dsm,v + pos);
+    pos += mutils::bytes_size(*p_num_reallocate);
     auto p_key = mutils::from_bytes_noalloc<std::string>(dsm,v + pos);
     pos += mutils::bytes_size(*p_key);
     auto p_adfg = mutils::from_bytes_noalloc<std::string>(dsm,v + pos);
@@ -1046,6 +1076,7 @@ std::unique_ptr<ObjectWithStringKey> ObjectWithStringKey::from_bytes(mutils::Des
         *p_timestamp_us,
         *p_previous_version,
         *p_previous_version_by_key,
+        *p_num_reallocate,
         *p_key,
         *p_adfg,
         *p_source_key,
@@ -1068,6 +1099,8 @@ mutils::context_ptr<ObjectWithStringKey> ObjectWithStringKey::from_bytes_noalloc
     pos += mutils::bytes_size(*p_previous_version);
     auto p_previous_version_by_key = mutils::from_bytes_noalloc<persistent::version_t>(dsm,v + pos);
     pos += mutils::bytes_size(*p_previous_version);
+    auto p_num_reallocate = mutils::from_bytes_noalloc<uint64_t>(dsm,v + pos);
+    pos += mutils::bytes_size(*p_num_reallocate);
     auto p_key = mutils::from_bytes_noalloc<std::string>(dsm,v + pos);
     pos += mutils::bytes_size(*p_key);
     auto p_adfg = mutils::from_bytes_noalloc<std::string>(dsm,v + pos);
@@ -1084,6 +1117,7 @@ mutils::context_ptr<ObjectWithStringKey> ObjectWithStringKey::from_bytes_noalloc
         *p_timestamp_us,
         *p_previous_version,
         *p_previous_version_by_key,
+        *p_num_reallocate,
         *p_key,
         *p_adfg,
         *p_source_key,
@@ -1106,6 +1140,8 @@ mutils::context_ptr<const ObjectWithStringKey> ObjectWithStringKey::from_bytes_n
     pos += mutils::bytes_size(*p_previous_version);
     auto p_previous_version_by_key = mutils::from_bytes_noalloc<persistent::version_t>(dsm,v + pos);
     pos += mutils::bytes_size(*p_previous_version);
+    auto p_num_reallocate = mutils::from_bytes_noalloc<uint64_t>(dsm,v + pos);
+    pos += mutils::bytes_size(*p_num_reallocate);
     auto p_key = mutils::from_bytes_noalloc<std::string>(dsm,v + pos);
     pos += mutils::bytes_size(*p_key);
     auto p_adfg = mutils::from_bytes_noalloc<std::string>(dsm,v + pos);
@@ -1122,6 +1158,7 @@ mutils::context_ptr<const ObjectWithStringKey> ObjectWithStringKey::from_bytes_n
         *p_timestamp_us,
         *p_previous_version,
         *p_previous_version_by_key,
+        *p_num_reallocate,
         *p_key,
         *p_adfg,
         *p_source_key,

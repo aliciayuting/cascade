@@ -55,6 +55,7 @@ void DefaultOffCriticalDataPathObserver::operator() (
                         timestamp_us,
                         previous_version,
                         previous_version_by_key,
+                        0,
                         new_key,
                         adfg,
                         key,
@@ -136,7 +137,7 @@ void DefaultOffCriticalDataPathObserver::operator() (
                     std::string prefix = okv.first;
                     while (!prefix.empty() && prefix.back() == PATH_SEPARATOR) prefix.pop_back();
                     std::string new_key = (prefix.empty()? key : prefix+PATH_SEPARATOR+key);
-                    dbg_default_trace("~~~~~Object to send: key[{}] ~~~~~", new_key);
+                    dbg_default_trace("~~~~~  Object to send: key[{}] ~~~~~", new_key);
                     // emplace constructor to avoid copy:
                     ObjectWithStringKey obj_to_send(
 #ifdef ENABLE_EVALUATION
@@ -146,6 +147,7 @@ void DefaultOffCriticalDataPathObserver::operator() (
                         timestamp_us,
                         previous_version,
                         previous_version_by_key,
+                        0,
                         new_key,
                         adfg,
                         key,

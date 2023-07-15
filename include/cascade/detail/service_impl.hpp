@@ -3021,7 +3021,7 @@ void CascadeContext<CascadeTypes...>::send_local_cached_models_info(){
     bool ALICIA_DEBUG = true;
     if(ALICIA_DEBUG){
         assert(_model_ids.size() == this->local_cached_model_ids.size() && "local_cached_model_ids contains duplication");
-        assert(this->gpu_available_memory < GPU_MEMORY_SIZE && "gpu_available_memory is larger than GPU_MEMORY_SIZE");
+        assert(this->local_available_memory.load() < GPU_MEMORY_SIZE && "gpu_available_memory is larger than GPU_MEMORY_SIZE");
     }
     this->get_service_client_ref().send_local_cached_models_info_to_group(_model_ids);
     this->local_cached_models_info_updated.store(false);

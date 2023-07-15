@@ -287,10 +287,11 @@ public:
     mutable uint64_t                                    timestamp_us;           // timestamp in microsecond
     mutable persistent::version_t                       previous_version;       // previous version, INVALID_VERSION for the first version.
     mutable persistent::version_t                       previous_version_by_key; // previous version by key, INVALID_VERSION for the first value of the key.
+    mutable uint64_t                                    num_reallocate;          // number of reallocation
     std::string                                         key;                     // object_id
     /** TODO: better data structure for adfg, use fixed size array instead*/
     std::string                                         adfg;                    // activation DFG, for event-driven scheduler
-    std::string                                         source_key; // key that generate this object(preq_key)
+    std::string                                         source_key;              // key that generate this object(preq_key)
     Blob                                                blob;                    // the object data
     
 
@@ -321,6 +322,7 @@ public:
                         const uint64_t _timestamp_us,
                         const persistent::version_t _previous_version,
                         const persistent::version_t _previous_version_by_key,
+                        const uint64_t _num_reallocate,
                         const std::string& _key,
                         const std::string& _adfg,
                         const std::string& _source_key,
@@ -346,7 +348,8 @@ public:
                         const std::size_t _s);
 
     // constructor 2 : copy consotructor
-    ObjectWithStringKey(const std::string& _key,
+    ObjectWithStringKey(const uint64_t _num_reallocate,
+                        const std::string& _key,
                         const std::string& _adfg,
                         const std::string& _source_key,
                         const uint8_t* const _b,
@@ -361,6 +364,7 @@ public:
                         const uint64_t _timestamp_us,
                         const persistent::version_t _previous_version,
                         const persistent::version_t _previous_version_by_key,
+                        const uint64_t _num_reallocate,
                         const std::string& _key,
                         const std::string& _adfg,
                         const std::string& _source_key,
@@ -410,6 +414,8 @@ public:
     virtual const std::string& get_adfg() const;
     virtual void set_source_key(const std::string& new_source_key);
     virtual const std::string& get_source_key() const;
+    virtual void set_num_reallocate(uint64_t new_num_reallocate);
+    virtual uint64_t get_num_reallocate() const;
 #ifdef ENABLE_EVALUATION
     virtual void set_message_id(uint64_t id) const override;
     virtual uint64_t get_message_id() const override;
@@ -445,7 +451,8 @@ inline std::ostream& operator<<(std::ostream& out, const ObjectWithStringKey& o)
         << ", prev_ver_by_key: " << std::hex << o.previous_version_by_key << std::dec
         << ", id:" << o.key  
         << ", adfg:" << o.adfg
-        << ", source_id:" << o.source_key
+        << ", source_key:" << o.source_key
+        << ", num_reallocate:" << (int)o.num_reallocate
         << ", data:" << o.blob << "}";
     return out;
 }
