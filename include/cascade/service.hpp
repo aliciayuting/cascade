@@ -145,6 +145,7 @@ namespace cascade {
         std::shared_ptr<OffCriticalDataPathObserver>   ocdpo_ptr;
         std::vector<std::shared_ptr<mutils::ByteRepresentable>>     value_ptrs;
         std::vector<std::string>        required_object_pathnames;
+        std::atomic<bool>               received_all_values;
         std::unordered_map<std::string,bool>           outputs;
         uint64_t                        expected_execution_timeus;
         DataFlowGraph::Statefulness     stateful;
@@ -161,7 +162,8 @@ namespace cascade {
             adfg(other.adfg),
             ocdpo_ptr(std::move(other.ocdpo_ptr)),
             value_ptrs(std::move(other.value_ptrs)),
-            required_object_pathnames(other.required_object_pathnames),
+            required_object_pathnames(std::move(other.required_object_pathnames)),
+            received_all_values(other.received_all_values.load()),
             outputs(std::move(other.outputs)),
             expected_execution_timeus(other.expected_execution_timeus),
             stateful(other.stateful),
@@ -205,13 +207,42 @@ namespace cascade {
                 if(_value_ptr){
                     value_ptrs.emplace_back(_value_ptr);
                 }
+                if(required_object_pathnames.size() > 1){
+                    received_all_values.store(false);
+                }else{
+                    received_all_values.store(true);
+                }
             }
         Action(const Action&) = delete; // disable copy constructor
         /**
          * Assignment operators
          */
-        Action& operator = (Action&&) = default;
+        Action& operator=(Action&& other) {
+            if (this != &other) {
+                sender = std::move(other.sender);
+                key_string = std::move(other.key_string);
+                prefix_length = other.prefix_length;
+                version = other.version;
+                adfg = std::move(other.adfg);
+                ocdpo_ptr = std::move(other.ocdpo_ptr);
+                value_ptrs = std::move(other.value_ptrs);
+                required_object_pathnames = std::move(other.required_object_pathnames);
+                received_all_values.store(other.received_all_values.load());
+                outputs = std::move(other.outputs);
+                expected_execution_timeus = other.expected_execution_timeus;
+                stateful = other.stateful;
+                is_trigger = other.is_trigger;
+            }
+            return *this;
+        }
         Action& operator = (const Action&) = delete;
+        /**
+         * Check if the action has received all the required values,
+         * i.e. the required_objects are received in value_ptrs
+         */
+        inline bool received_all_preq_values() const {
+            return (received_all_values.load() || adfg.empty());
+        }
         /**
          *  Add value_ptr
          *  @param _value_ptr newly received value add to this action
@@ -219,9 +250,19 @@ namespace cascade {
          */
         inline void add_value_ptr(const std::shared_ptr<mutils::ByteRepresentable>& _value_ptr) {
             value_ptrs.emplace_back(_value_ptr);
-        }
-        inline bool received_all_preq_values() const {
-            return (value_ptrs.size() >= required_object_pathnames.size() || adfg.empty());
+            if(value_ptrs.size() >= required_object_pathnames.size() ){
+                received_all_values.store(true);
+            }   
+        } 
+        /**
+         * Helper function
+         * call set_num_reallocate() to all num_ value_ptrs of this Action 
+         */
+        inline void set_value_ptrs_num_reallocate(uint64_t num_reallocate) {
+            for(auto& value_ptr : value_ptrs){
+                auto* object_ptr = dynamic_cast<ObjectWithStringKey*>(value_ptr.get());
+                object_ptr->set_num_reallocate(num_reallocate);
+            }
         }
         /**
          *  fire the action.

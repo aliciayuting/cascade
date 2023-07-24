@@ -2467,7 +2467,7 @@ void CascadeContext<CascadeTypes...>::tide_scheduler_workhorse(uint32_t worker_i
 /** Fire scheduler operation */
 template <typename... CascadeTypes>
 void CascadeContext<CascadeTypes...>::fire_scheduler(Action&& action,uint32_t worker_id) {
-    dbg_default_trace("-- -- fire_scheduler[{}] for action key: [{}]", worker_id, action.key_string);
+    dbg_default_trace("CascadeContext<CascadeTypes...>::fire_scheduler() worker[{}] for action key: [{}]", worker_id, action.key_string);
     std::string vertex_pathname = (action.key_string).substr(0, action.prefix_length);
     uint64_t before_scheduler_us = get_time_us(true);
     switch(SCHEDULER_TYPE){
@@ -2483,7 +2483,7 @@ void CascadeContext<CascadeTypes...>::fire_scheduler(Action&& action,uint32_t wo
             break;
     }
     uint64_t after_scheduler_us = get_time_us(true);
-    dbg_default_trace("~~~ vertex_pathname: {}, scheduled adfg: {}, time[{}]us", vertex_pathname, action.adfg, after_scheduler_us - before_scheduler_us);
+    dbg_default_trace("~ vertex_pathname: {}, scheduled adfg: {}, time[{}]us", vertex_pathname, action.adfg, after_scheduler_us - before_scheduler_us);
     if(!action.adfg.empty()){
         ObjectWithStringKey* obj_ptr = reinterpret_cast<ObjectWithStringKey*>(action.value_ptrs.at(0).get());
         obj_ptr->adfg = action.adfg;
@@ -2570,7 +2570,8 @@ Action CascadeContext<CascadeTypes...>::action_queue::action_buffer_dequeue(std:
             action_buffer_slot_cv.notify_one();
         }else{
             size_t cursor = action_buffer_head.load();
-            while(cursor != action_buffer_tail){
+            size_t cursor_end = action_buffer_tail.load();
+            while(cursor != cursor_end){
                 if(action_buffer[cursor].received_all_preq_values()){
                     ret = std::move(action_buffer[cursor]);
                     while(cursor != action_buffer_head.load()){
