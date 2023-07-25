@@ -394,6 +394,11 @@ public:
   */
 #define GPU_MEMORY_SIZE                             (14000000)  /** in KB*/
 
+/** 
+ * Flag for experimentation purposes
+ * 0 : TIDE | 1: HASH | 2: HEFT | 3: JIT
+*/
+#define SCHEDULER_TYPE                              (0)
 /**
  * For scheduler to decide if were to reschedule the next tasks if the 
  * current global workers' states shifted since the scheduler earlier.
@@ -401,12 +406,6 @@ public:
  * the reschedule the task.
 */
 #define RESCHEDULE_THREASHOLD_FACTOR                (1.5)
-
-/** 
- * Flag for experimentation purposes
- * 0 : TIDE | 1: HASH | 2: HEFT | 3: JIT
-*/
-#define SCHEDULER_TYPE                              (2)
 /**
  * Flag for experimentation purposes
  * 0: no reschedule joint task | 1: reschedule joint task

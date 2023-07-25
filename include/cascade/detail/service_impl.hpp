@@ -3193,8 +3193,12 @@ node_id_t CascadeContext<CascadeTypes...>::next_task_scheduled_node_id(bool& sch
     }
     // 2. Check if the intially assigned worker is still a good choice. If not, re-schedule
     auto& task_info = prefix_to_task_info[task_name];
-    uint64_t wait_threashold = RESCHEDULE_THREASHOLD_FACTOR * task_info.expected_execution_timeus;
-        // Two cases require reschedule.
+    uint64_t wait_threashold = 0;
+    // TIDE scheduler prioritize the original plan, only reschedule when wait_threashold exceed the limit
+    if (SCHEDULER_TYPE == 0){
+        wait_threashold = RESCHEDULE_THREASHOLD_FACTOR * task_info.expected_execution_timeus;
+    }
+    // Two cases require reschedule.
     // case 2.1 if it is not a joint task in the dfg, and the previously scheduled_node_id has waittime longer than threashold
     bool require_reschedule_non_joint = (this->check_queue_wait_time(scheduled_node_id) > wait_threashold) & (task_info.required_objects_pathnames.size() < 2); 
     // case 2.2 when scheduling policy request RESCHEDULE_JOINT_TASK, if it is a joint task (that is collected by receiver) 
