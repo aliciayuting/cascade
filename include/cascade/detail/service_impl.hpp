@@ -2460,10 +2460,10 @@ void CascadeContext<CascadeTypes...>::tide_scheduler_workhorse(uint32_t worker_i
                 this->fire_scheduler(std::move(action), worker_id);
             }else{
                 // 2. joint task to be rescheduled
-                action.set_value_ptrs_num_reallocate(1);   // ALICIA TODO: double check this
                 std::string vertex_pathname = (action.key_string).substr(0, action.prefix_length);
                 bool scheduled;
                 node_id_t scheduled_node = next_task_scheduled_node_id(scheduled, vertex_pathname, action.adfg, true);
+                action.set_value_ptrs_num_reallocate(1);   // ALICIA TODO: double check this
                 std::string trace_str = "_node:" + std::to_string(scheduled_node) + ", ";
                 if(scheduled_node == this->get_service_client_ref().get_my_id()){
                     trace_str = " sending rescheduled_obj: " + action.key_string + " to the same node.";
@@ -2881,7 +2881,6 @@ void CascadeContext<CascadeTypes...>::find_handlers_and_local_post(ObjectWithStr
                         }
                     }
                     if (!joint_task_to_reallocate){
-                        // post action
                         // post action
 #ifdef HAS_STATEFUL_UDL_SUPPORT
                         this->post(std::move(action), std::get<1>(handler.second), is_trigger);
