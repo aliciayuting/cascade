@@ -162,11 +162,26 @@ class CascadeServiceCDPO : public CriticalDataPathObserver<CascadeType> {
                                          dynamic_cast<const IHasMessageID*>(&value)->get_message_id(),
                                          get_time_ns(),
                                          apei.uint64_val);
-                    // check if this job instance has been scheduled, if post it to unscheduled_queue for scheduler to schedule the whole job instance
-                    // REQUIRED SINGLE ENTRY TASK FOR SCHEDULER
-                    if(value_ptr->get_adfg().empty() && handlers.size() == 1 && action.prefix_length != 0){
+                    /**
+                     * Put the action to scheduler queue if one of the two cases:
+                     * 1. This action is an entry task, and hasn't been scheduled. 
+                     *     If so, post it to unscheduled_queue for scheduler to schedule the whole job instance.
+                     * 2. (For JIT baseline experiment)This is a joint task, which haven't been rescheduled(num_reallocate == 0), and current worker waittime exceeds its waiting threashold.
+                     *     If so, post it to unscheduled_queue to be rescheduled once the whole dependent intermediate results arrived.
+                     * Current implementation requires single handler for the pathname
+                    */
+                    bool unscheduled_entry_task = value_ptr->get_adfg().empty() && handlers.size() == 1 && action.prefix_length != 0;
+                    if(unscheduled_entry_task){
+                        // REQUIRED SINGLE ENTRY TASK FOR SCHEDULER
                         ctxt->post_to_scheduler(std::move(action));
                         return;
+                    }
+                    if (RESCHEDULE_JOINT_TASK == 1){
+                        if(action.required_object_pathnames.size() > 1 && value_ptr->get_num_reallocate() == 0){
+                            dbg_default_trace("In{}, post_to_scheduler to reschedule the joint task({})", __PRETTY_FUNCTION__, action.key_string);
+                            ctxt->post_to_scheduler(std::move(action));
+                            return;
+                        }
                     }
 #ifdef HAS_STATEFUL_UDL_SUPPORT
                     ctxt->post(std::move(action), std::get<1>(handler.second), is_trigger);

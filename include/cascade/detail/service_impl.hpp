@@ -2452,7 +2452,36 @@ void CascadeContext<CascadeTypes...>::tide_scheduler_workhorse(uint32_t worker_i
         // waiting for an action
         Action action = std::move(aq.action_buffer_dequeue(is_running));
         if(!action) continue;
-        this->fire_scheduler(std::move(action), worker_id);
+        if(!RESCHEDULE_JOINT_TASK){
+            this->fire_scheduler(std::move(action), worker_id);
+        }else{
+            // case 1. entry task to be schedule the whole job
+            if(action.required_object_pathnames.size() == 0){
+                this->fire_scheduler(std::move(action), worker_id);
+            }else{
+                // 2. joint task to be rescheduled
+                action.set_value_ptrs_num_reallocate(1);   // ALICIA TODO: double check this
+                std::string vertex_pathname = (action.key_string).substr(0, action.prefix_length);
+                bool scheduled;
+                node_id_t scheduled_node = next_task_scheduled_node_id(scheduled, vertex_pathname, action.adfg, true);
+                std::string trace_str = "_node:" + std::to_string(scheduled_node) + ", ";
+                if(scheduled_node == this->get_service_client_ref().get_my_id()){
+                    trace_str = " sending rescheduled_obj: " + action.key_string + " to the same node.";
+                    this->post(std::move(action),action.stateful,action.is_trigger);
+                }else{
+                    // send all the intermediate result to the scheduled worker node
+                    std::string trace_str = " sending rescheduled_objs: ";
+                    for(size_t i = 0; i < action.required_object_pathnames.size(); i++){
+                        auto* object_ptr = reinterpret_cast<ObjectWithStringKey*>(action.value_ptrs.at(i).get());
+                        trace_str += "(key:" + object_ptr->get_key_ref() + ", prev_key:" + object_ptr->get_source_key() + "), ";
+                        // object_ptr->set_num_reallocate(1);
+                        this->get_service_client_ref().single_node_trigger_put((*object_ptr), scheduled_node);
+                    }
+                    trace_str += " to node " + std::to_string(scheduled_node);
+                }
+                dbg_default_trace(trace_str);
+            }
+        }
         if(!is_running) {
             do {
                 action = std::move(aq.action_buffer_dequeue(is_running));
@@ -2478,9 +2507,12 @@ void CascadeContext<CascadeTypes...>::fire_scheduler(Action&& action,uint32_t wo
             std::string key = (action.key_string).substr(action.prefix_length);
             action.adfg = this->hash_scheduler(vertex_pathname, key);
         }break;
-        case 2:
+        case 2: {
             action.adfg = this->heft_scheduler(vertex_pathname);
-            break;
+        }break;
+        case 3:
+            std::string key = (action.key_string).substr(action.prefix_length);
+            action.adfg = this->hash_scheduler(vertex_pathname, key);
     }
     uint64_t after_scheduler_us = get_time_us(true);
     dbg_default_trace("~ vertex_pathname: {}, scheduled adfg: {}, time[{}]us", vertex_pathname, action.adfg, after_scheduler_us - before_scheduler_us);
@@ -2840,12 +2872,23 @@ void CascadeContext<CascadeTypes...>::find_handlers_and_local_post(ObjectWithStr
 #endif
                     std::get<1>(handler.second),  // stateful
                     is_trigger);
-                    // post action
+                    bool joint_task_to_reallocate = false;
+                    if (RESCHEDULE_JOINT_TASK){
+                        if(action.required_object_pathnames.size() > 1 && value_ptr->get_num_reallocate() == 0){
+                            dbg_default_trace("find_handlers_and_local_post() escheduled joint task({}) ", action.key_string);
+                            this->post_to_scheduler(std::move(action));
+                            joint_task_to_reallocate = true;
+                        }
+                    }
+                    if (!joint_task_to_reallocate){
+                        // post action
+                        // post action
 #ifdef HAS_STATEFUL_UDL_SUPPORT
-                    this->post(std::move(action), std::get<1>(handler.second), is_trigger);
+                        this->post(std::move(action), std::get<1>(handler.second), is_trigger);
 #else
-                    this->post(std::move(action), is_trigger);
+                        this->post(std::move(action), is_trigger);
 #endif//HAS_STATEFUL_UDL_SUPPORT
+                    }
                 }
             }
 
@@ -2931,7 +2974,13 @@ bool CascadeContext<CascadeTypes...>::post(Action&& action, bool is_trigger) {
 
 template <typename... CascadeTypes>
 bool CascadeContext<CascadeTypes...>::post_to_scheduler(Action&& action) {
-    unscheduled_action_queue.action_buffer_enqueue(std::move(action));
+    bool emplace_to_existing_queued_task = false;
+    if(RESCHEDULE_JOINT_TASK && action.required_object_pathnames.size() > 1){
+        emplace_to_existing_queued_task = unscheduled_action_queue.action_buffer_emplace(action);
+    }
+    if(!emplace_to_existing_queued_task){
+        unscheduled_action_queue.action_buffer_enqueue(std::move(action));
+    }
     return true;
 }
 
@@ -3035,6 +3084,7 @@ uint64_t CascadeContext<CascadeTypes...>::select_models_to_evict(std::vector<uin
     uint64_t GPU_avaialble_memory = this->local_available_memory.load();
     // FIFO eviction policy
     if(EVICTION_POLICY == 0){
+        dbg_default_trace("Select_models_to_evict() uses FIFO eviction policy");
         auto it = this->local_cached_model_ids.begin();
         while( it != this->local_cached_model_ids.end() ) {
             if(required_memory <= GPU_avaialble_memory){
@@ -3113,7 +3163,8 @@ std::string CascadeContext<CascadeTypes...>::local_cached_info_dump() {
 template <typename... CascadeTypes>
 node_id_t CascadeContext<CascadeTypes...>::next_task_scheduled_node_id(bool& scheduled, 
                                                                        const std::string& task_name, 
-                                                                       const std::string& adfg){
+                                                                       const std::string& adfg,
+                                                                       bool gathered_by_receiver){
     int64_t task_rank = this->get_task_ranking(task_name);
     scheduled = false;
     node_id_t scheduled_node_id = 0;
@@ -3136,17 +3187,20 @@ node_id_t CascadeContext<CascadeTypes...>::next_task_scheduled_node_id(bool& sch
         dbg_default_warn("CascadeContext::next_task_scheduled_node_id task {} is not scheduled", task_name);
         return 0;
     }
-    if(SCHEDULER_TYPE != 0){ // experiment purposes
+    // Only TIDE and JIT schedule dynamically
+    if(SCHEDULER_TYPE == 1 || SCHEDULER_TYPE == 2){ // experiment purposes
         return scheduled_node_id;
     }
     // 2. Check if the intially assigned worker is still a good choice. If not, re-schedule
     auto& task_info = prefix_to_task_info[task_name];
     uint64_t wait_threashold = RESCHEDULE_THREASHOLD_FACTOR * task_info.expected_execution_timeus;
-    bool require_reschedule = this->check_queue_wait_time(scheduled_node_id) > wait_threashold;
-    // only re-schedule if the task is not a joint task in the dfg
-    require_reschedule = require_reschedule & (task_info.required_objects_pathnames.size() < 2); 
+        // Two cases require reschedule.
+    // case 2.1 if it is not a joint task in the dfg, and the previously scheduled_node_id has waittime longer than threashold
+    bool require_reschedule_non_joint = (this->check_queue_wait_time(scheduled_node_id) > wait_threashold) & (task_info.required_objects_pathnames.size() < 2); 
+    // case 2.2 when scheduling policy request RESCHEDULE_JOINT_TASK, if it is a joint task (that is collected by receiver) 
+    bool require_reschedule_joint = ((RESCHEDULE_JOINT_TASK == 1) & (task_info.required_objects_pathnames.size() > 1) & gathered_by_receiver);
     // 3. Re-schedule the task
-    if(require_reschedule){
+    if(require_reschedule_non_joint || require_reschedule_joint){
         node_id_t local_node_id = this->get_service_client_ref().get_my_id();
         std::vector<node_id_t> workers_set = this->get_service_client_ref().get_members();
         workers_set.erase(std::remove(workers_set.begin(), workers_set.end(), 0), workers_set.end()); // TODO: change this to config/auto condition phrase
@@ -3173,6 +3227,7 @@ node_id_t CascadeContext<CascadeTypes...>::next_task_scheduled_node_id(bool& sch
             }
         }
     }
+    dbg_default_trace("CascadeContext::next_task_scheduled_node_id() rescheduled {} to node {}", task_name, scheduled_node_id);
     return scheduled_node_id;
 }
 

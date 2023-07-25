@@ -63,19 +63,16 @@ void DefaultOffCriticalDataPathObserver::operator() (
                         true);
                     bool scheduled = false;
                     node_id_t scheduled_node_id;
-                    if(!prefix.empty()){
-                        std::string task_name = prefix;
-                        if(task_name.back() != PATH_SEPARATOR) {
-                            task_name = task_name + PATH_SEPARATOR;
-                        }
-                        scheduled_node_id = typed_ctxt->next_task_scheduled_node_id(scheduled, task_name, adfg); 
+                    if (!prefix.empty()){
+                        std::string task_name = prefix + PATH_SEPARATOR;
+                        scheduled_node_id = typed_ctxt->next_task_scheduled_node_id(scheduled, task_name, adfg, false); 
                     }
                     if(scheduled){
                         if(scheduled_node_id != typed_ctxt->get_service_client_ref().get_my_id()){
-                            dbg_default_debug( "~~~~~~ scheduled(adfg{}) the next task({}) to different node({}) in emit ~~~~~~~", adfg, new_key, scheduled_node_id);
+                            dbg_default_trace( "In{}, scheduled(adfg{}) the next task({}) to different node({}) in emit ~~~~~~~", __PRETTY_FUNCTION__, adfg, new_key, scheduled_node_id);
                             typed_ctxt->get_service_client_ref().single_node_trigger_put(obj_to_send, scheduled_node_id);
                         }else{
-                            dbg_default_debug( "~~~~~~ scheduled(adfg{}) the next task({}) to the same node in emit ~~~~~~~", adfg, new_key);
+                            dbg_default_debug( "In{}, scheduled(adfg{}) the next task({}) to the same node in emit ~~~~~~~", __PRETTY_FUNCTION__, adfg, new_key);
                             typed_ctxt->find_handlers_and_local_post(obj_to_send);
                         }
                     }else{
@@ -156,18 +153,15 @@ void DefaultOffCriticalDataPathObserver::operator() (
                     bool scheduled = false;
                     node_id_t scheduled_node_id;
                     if(!prefix.empty()){
-                        std::string task_name = prefix;
-                        if(task_name.back() != PATH_SEPARATOR) {
-                            task_name = task_name + PATH_SEPARATOR;
-                        }
-                        scheduled_node_id = typed_ctxt->next_task_scheduled_node_id(scheduled, task_name, adfg); 
+                        std::string task_name = prefix + PATH_SEPARATOR;
+                        scheduled_node_id = typed_ctxt->next_task_scheduled_node_id(scheduled, task_name, adfg, false);
                     }
                     if(scheduled){
                         if(scheduled_node_id != typed_ctxt->get_service_client_ref().get_my_id()){
-                            dbg_default_debug( "~~~~~~ scheduled(adfg{}) the next task({}) to different node({}) in emit ~~~~~~~", adfg, new_key,  scheduled_node_id);
+                            dbg_default_trace( "In{}, scheduled(adfg{}) the next task({}) to different node({}) in emit ~~~~~~~", __PRETTY_FUNCTION__, adfg, new_key, scheduled_node_id);
                             typed_ctxt->get_service_client_ref().single_node_trigger_put(obj_to_send, scheduled_node_id);
                         }else{
-                            dbg_default_debug( "~~~~~~ scheduled(adfg{}) the next task({}) to the same node in emit ~~~~~~~", adfg, new_key);
+                            dbg_default_debug( "In{}, scheduled(adfg{}) the next task({}) to the same node in emit ~~~~~~~", __PRETTY_FUNCTION__, adfg, new_key);
                             typed_ctxt->find_handlers_and_local_post(obj_to_send);
                         }
                     }else{

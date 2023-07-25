@@ -2105,7 +2105,8 @@ namespace cascade {
         */
         node_id_t next_task_scheduled_node_id(bool& scheduled, 
                                               const std::string& task_name, 
-                                              const std::string& adfg);
+                                              const std::string& adfg,
+                                              bool gathered_by_receiver);
 
         /**
          * given a prefix of the first task of the dfg generage the adfg result for this instance
