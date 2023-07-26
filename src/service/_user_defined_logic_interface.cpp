@@ -45,7 +45,7 @@ void DefaultOffCriticalDataPathObserver::operator() (
                     std::string prefix = okv.first;
                     while (!prefix.empty() && prefix.back() == PATH_SEPARATOR) prefix.pop_back();
                     std::string new_key = (prefix.empty()? key : prefix+PATH_SEPARATOR+key);
-                    dbg_default_trace("~~~~~Object to send: key[{}] ~~~~~", new_key);
+                    dbg_default_trace("In {}, Object to send: key[{}] ~~~~~", __PRETTY_FUNCTION__, new_key);
                     // emplace constructor to avoid copy:
                     ObjectWithStringKey obj_to_send(
 #ifdef ENABLE_EVALUATION
@@ -58,7 +58,7 @@ void DefaultOffCriticalDataPathObserver::operator() (
                         0,
                         new_key,
                         adfg,
-                        key,
+                        full_key_string,
                         blob,
                         true);
                     bool scheduled = false;
@@ -134,7 +134,7 @@ void DefaultOffCriticalDataPathObserver::operator() (
                     std::string prefix = okv.first;
                     while (!prefix.empty() && prefix.back() == PATH_SEPARATOR) prefix.pop_back();
                     std::string new_key = (prefix.empty()? key : prefix+PATH_SEPARATOR+key);
-                    dbg_default_trace("~~~~~  Object to send: key[{}] ~~~~~", new_key);
+                    dbg_default_trace("In {}, Object to send: key[{}] ~~~~~", __PRETTY_FUNCTION__, new_key);
                     // emplace constructor to avoid copy:
                     ObjectWithStringKey obj_to_send(
 #ifdef ENABLE_EVALUATION
@@ -147,7 +147,7 @@ void DefaultOffCriticalDataPathObserver::operator() (
                         0,
                         new_key,
                         adfg,
-                        key,
+                        full_key_string,
                         blob,
                         true);
                     bool scheduled = false;
