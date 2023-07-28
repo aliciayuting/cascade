@@ -2275,8 +2275,6 @@ void CascadeContext<CascadeTypes...>::construct() {
                 this->local_ml_models_stats.emplace(model_info.model_id, model_stats);
             }
         }
-        // Testing purposes
-        dfg.dump();
     }
     // 2 - start the working threads
     is_running.store(true);
