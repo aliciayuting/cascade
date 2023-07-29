@@ -415,7 +415,7 @@ public:
  * Flag for experimentation purposes
  * 0 : FIFO | 1: LookAheadEvict
 */
-#define EVICTION_POLICY                             (0)
+#define EVICTION_POLICY                             (1)
 
 /*
  * For UDLs:
