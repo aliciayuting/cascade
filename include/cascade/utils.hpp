@@ -410,7 +410,7 @@ public:
  * Flag for experimentation purposes
  * 0: no reschedule joint task | 1: reschedule joint task
 */
-#define RESCHEDULE_JOINT_TASK                       (0)
+#define RESCHEDULE_JOINT_TASK                       (1)
 /**
  * Flag for experimentation purposes
  * 0 : FIFO | 1: LookAheadEvict
