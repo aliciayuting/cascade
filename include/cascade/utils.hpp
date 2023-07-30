@@ -398,7 +398,7 @@ public:
  * Flag for experimentation purposes
  * 0 : TIDE | 1: HASH | 2: HEFT | 3: JIT
 */
-#define SCHEDULER_TYPE                              (0)
+#define SCHEDULER_TYPE                              (1)
 /**
  * For scheduler to decide if were to reschedule the next tasks if the 
  * current global workers' states shifted since the scheduler earlier.
