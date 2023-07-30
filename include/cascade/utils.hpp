@@ -398,14 +398,14 @@ public:
  * Flag for experimentation purposes
  * 0 : TIDE | 1: HASH | 2: HEFT | 3: JIT
 */
-#define SCHEDULER_TYPE                              (2)
+#define SCHEDULER_TYPE                              (3)
 /**
  * For scheduler to decide if were to reschedule the next tasks if the 
  * current global workers' states shifted since the scheduler earlier.
  * If the worker_waittime > task execution time * RESCHEDULE_THREASHOLD_FACTOR
  * the reschedule the task.
 */
-#define RESCHEDULE_THREASHOLD_FACTOR                (1.5)
+#define RESCHEDULE_THREASHOLD_FACTOR                (0)
 /**
  * Flag for experimentation purposes
  * 0: no reschedule joint task | 1: reschedule joint task
