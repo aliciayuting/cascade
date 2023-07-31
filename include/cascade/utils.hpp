@@ -428,7 +428,7 @@ public:
  * For LOOK_AHEAD EVICTION/PREFETCH local cache management
  * How far(number of actions) should local cache manager look ahead to prefetch future models
 */
-#define NUM_ACTIONS_LOOK_AHEAD_LIMIT                (5)
+#define NUM_ACTIONS_LOOK_AHEAD_LIMIT                (2)
 
 /*
  * For UDLs:
