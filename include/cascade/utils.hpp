@@ -417,6 +417,19 @@ public:
 */
 #define EVICTION_POLICY                             (1)
 
+/**
+ * For LOOK_AHEAD EVICTION/PREFETCH local cache management
+ * Number prefetching future models while running model execution
+ * TODO: currently only support 1
+*/
+#define NUM_MODELS_FETCH_FOR_FUTURE                 (1)
+
+/**
+ * For LOOK_AHEAD EVICTION/PREFETCH local cache management
+ * How far(number of actions) should local cache manager look ahead to prefetch future models
+*/
+#define NUM_ACTIONS_LOOK_AHEAD_LIMIT                (5)
+
 /*
  * For UDLs:
  *      TLT_ACTION_POST     The time when action is inserted into an action_queue for off critical data path processing.

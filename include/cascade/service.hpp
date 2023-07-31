@@ -2055,32 +2055,39 @@ namespace cascade {
         std::vector<DataFlowGraph::MLModelInfo> get_required_models_info(std::string pathname);
 
         /**
-         * Helper function to models_to_fetch_and_evict(), 
-         * invoked when there is local model fetching or eviction to GPU memory on this node.
-         * @param models_to_fetch   the models about to be fetched to the GPU memory
-         * @param models_to_evict   the models about to be evicted from the GPU memory
-         * @param new_gpu_available_memory   the new available memory after models fetching and eviction 
-        */
-        void update_local_model_info(const std::vector<uint32_t>& models_to_fetch,
-                                     const std::vector<uint32_t>& models_to_evict,
-                                     const uint64_t& new_gpu_available_memory);
-
-        /**
         * send local_cached_models_info to all nodes in the group
         */
         void send_local_cached_models_info();
 
         /**
-         * Helper function to models_to_fetch_and_evict()
-         * decide which models to evict from GPU memeory
+         * Helper function for models_to_fetch_and_evict()
+         * An optimization for LOOK_AHEAD eviction policy, find the future needed models based on queue.
+         * this function updates this->local_cached_model_ids if there is prefetching to be done soon
+         * @param  models_to_fetch_for_future  
+         *                              the models not in current cache, but needed by the near future tasks; which will be fetch as the current task executing
+         *                              to be filled in this function
+         * @param  required_models      the required models for current task to execute
+         * @param  required_memory      the required memory for the models required by current task
+         * @return the amount of memory required if to prefetch the models for future tasks
+         */
+        uint64_t look_ahead_queue_required_models(std::vector<uint32_t>& models_to_fetch_for_future,
+                                               const std::vector<DataFlowGraph::MLModelInfo>& required_model_info,
+                                               const std::uint64_t& required_memory,
+                                               const std::uint64_t& current_gpu_available_memory);
+
+        /**
+         * Helper function to models_to_fetch_and_evict(), decide which models to evict from GPU memeory, 
+         * this function updates this->local_cached_model_ids if there is eviction
          * @param  models_to_evict      the models to evict, to be filled in this function
          * @param  required_models      the required models for the pathname
          * @param  required_memory      the required memory for the pathname
-         * @return the total memory after the models evicted
+         * @param  current_gpu_available_memory  the current available memory on GPU
+         * @return the amount of memory freed by evicting the models
         */
         uint64_t select_models_to_evict(std::vector<uint32_t>& models_to_evict,
                                         const std::vector<DataFlowGraph::MLModelInfo>& required_model_info, 
-                                        const std::uint64_t& required_memory);
+                                        const std::uint64_t& required_memory,
+                                        const std::uint64_t& current_gpu_available_memory);
 
         /**
          * GPU memory management:
@@ -2088,12 +2095,16 @@ namespace cascade {
          * @param  pathname             the pathname of the entry vertex of the dfg
          * @param  models_to_fetch      the models to fetch, to be filled in this function
          * @param  models_to_evict      the models to evict, to be filled in this function
+         * @param  models_to_fetch_for_future  the models to fetch as running, to be filled in this function
+         *                              this is an optimization to cache management, 
+         *                              to run the execution and pre-fetch models for feature tasks
          * @return True if there are ways to arrange the GPU memory to satisfy the pathname required models
          *         False if there is no way
         */
         bool models_to_fetch_and_evict(std::string pathname,
                                         std::vector<uint32_t>& models_to_fetch,
-                                        std::vector<uint32_t>& models_to_evict);
+                                        std::vector<uint32_t>& models_to_evict,
+                                        std::vector<uint32_t>& models_to_fetch_for_future);
 
         /** Helper function to check local cached group_cached_models_info and group_queue_wait_times
         */
