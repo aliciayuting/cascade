@@ -398,24 +398,37 @@ public:
  * Flag for experimentation purposes
  * 0 : TIDE | 1: HASH | 2: HEFT | 3: JIT
 */
-#define SCHEDULER_TYPE                              (3)
+#define SCHEDULER_TYPE                              (0)
 /**
  * For scheduler to decide if were to reschedule the next tasks if the 
  * current global workers' states shifted since the scheduler earlier.
  * If the worker_waittime > task execution time * RESCHEDULE_THREASHOLD_FACTOR
  * the reschedule the task.
 */
-#define RESCHEDULE_THREASHOLD_FACTOR                (0)
+#define RESCHEDULE_THREASHOLD_FACTOR                (1.5)
 /**
  * Flag for experimentation purposes
  * 0: no reschedule joint task | 1: reschedule joint task
 */
-#define RESCHEDULE_JOINT_TASK                       (1)
+#define RESCHEDULE_JOINT_TASK                       (0)
 /**
  * Flag for experimentation purposes
  * 0 : FIFO | 1: LookAheadEvict
 */
-#define EVICTION_POLICY                             (0)
+#define EVICTION_POLICY                             (1)
+
+/**
+ * For LOOK_AHEAD EVICTION/PREFETCH local cache management
+ * Number prefetching future models while running model execution
+ * TODO: currently only support 1
+*/
+#define NUM_MODELS_FETCH_FOR_FUTURE                 (1)
+
+/**
+ * For LOOK_AHEAD EVICTION/PREFETCH local cache management
+ * How far(number of actions) should local cache manager look ahead to prefetch future models
+*/
+#define NUM_ACTIONS_LOOK_AHEAD_LIMIT                (5)
 
 /*
  * For UDLs:

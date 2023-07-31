@@ -3046,21 +3046,6 @@ std::vector<DataFlowGraph::MLModelInfo> CascadeContext<CascadeTypes...>::get_req
     return std::vector<DataFlowGraph::MLModelInfo>();
 }
 
-
-template <typename... CascadeTypes>
-void CascadeContext<CascadeTypes...>::update_local_model_info(const std::vector<uint32_t>& models_to_fetch,
-                                                              const std::vector<uint32_t>& models_to_evict,
-                                                              const uint64_t& new_gpu_available_memory){
-    this->local_cached_model_ids.erase(std::remove_if(this->local_cached_model_ids.begin(), 
-                                        this->local_cached_model_ids.end(), 
-                                        [&models_to_evict](int model) {
-                                            return std::find(models_to_evict.begin(), models_to_evict.end(), model) != models_to_evict.end();
-                                        }), 
-                                        this->local_cached_model_ids.end());
-    this->local_cached_model_ids.insert(this->local_cached_model_ids.end(), models_to_fetch.begin(), models_to_fetch.end());
-    this->local_available_memory.store(new_gpu_available_memory);
-}
-
 template <typename... CascadeTypes>
 void CascadeContext<CascadeTypes...>::send_local_cached_models_info(){
     std::shared_lock rlck(this->local_cached_model_info_mutex);
@@ -3075,9 +3060,63 @@ void CascadeContext<CascadeTypes...>::send_local_cached_models_info(){
 }
 
 template <typename... CascadeTypes>
+uint64_t CascadeContext<CascadeTypes...>::look_ahead_queue_required_models(std::vector<uint32_t>& models_to_fetch_for_future,
+                                                                    const std::vector<DataFlowGraph::MLModelInfo>& required_model_info,
+                                                                    const std::uint64_t& required_memory,
+                                                                    const std::uint64_t& current_gpu_available_memory){
+    size_t num_models_to_fetch_for_future = 0;
+    size_t num_actions_look_ahead = 0;
+    uint64_t total_required_memory = 0;
+    uint64_t available_memory_for_prefetch = current_gpu_available_memory - required_memory;
+    size_t cur_pos = single_threaded_action_queue_for_p2p.action_buffer_head.load();
+    size_t end_pos = single_threaded_action_queue_for_p2p.action_buffer_tail.load();
+    while(cur_pos != end_pos){
+        auto& action = single_threaded_action_queue_for_p2p.action_buffer[cur_pos];
+        std::string pathname = (action.key_string).substr(0, action.prefix_length);
+        std::vector<DataFlowGraph::MLModelInfo> models_info = this->get_required_models_info(pathname);
+        for(const auto& model: models_info){
+            if (num_models_to_fetch_for_future < NUM_MODELS_FETCH_FOR_FUTURE){
+                // check if model is already in cache
+                int32_t model_id = model.model_id;
+                auto it_current_required = std::find_if(required_model_info.begin(), required_model_info.end(),[model_id](const DataFlowGraph::MLModelInfo& r_model){
+                                                return r_model.model_id == model_id;    
+                                            });
+                auto it_local_cache = std::find(this->local_cached_model_ids.begin(), this->local_cached_model_ids.end(), model_id);
+                if(it_current_required == required_model_info.end() && it_local_cache == this->local_cached_model_ids.end()){
+                    /** Stop looking ahead for more models, once see a required model cannot no longer fit to available memory.
+                     *  This is to avoid unnecesary model movement. Want to pre-fetch the models required by earlier task, before pre-fetching models for later tasks
+                     *  Since fetching later required models before earlier ones, may lead eviction of them to make room for earlier ones
+                    */
+                    if (total_required_memory + model.model_size > available_memory_for_prefetch){
+                        return total_required_memory;
+                    }else{
+                        models_to_fetch_for_future.emplace_back(model.model_id);
+                        this->local_cached_model_ids.emplace_back(model.model_id);
+                        num_models_to_fetch_for_future ++;
+                        total_required_memory += model.model_size;
+                        // stop looking ahead if enough models are found
+                        if (num_models_to_fetch_for_future >= NUM_MODELS_FETCH_FOR_FUTURE){
+                            return total_required_memory;
+                        }
+                    }
+                }
+            }
+        }
+        cur_pos = (cur_pos + 1) % ACTION_BUFFER_SIZE;
+        // only look ahead for NUM_ACTIONS_LOOK_AHEAD actions, not to overlook ahead
+        num_actions_look_ahead ++;
+        if (num_actions_look_ahead >= NUM_ACTIONS_LOOK_AHEAD_LIMIT){
+            break;
+        }
+    }
+    return total_required_memory;
+}
+
+template <typename... CascadeTypes>
 uint64_t CascadeContext<CascadeTypes...>::select_models_to_evict(std::vector<uint32_t>& models_to_evict,
                                                             const std::vector<DataFlowGraph::MLModelInfo>& required_model_info, 
-                                                            const std::uint64_t& required_memory){
+                                                            const std::uint64_t& required_memory,
+                                                            const std::uint64_t& current_gpu_available_memory){
     // 1. order local_cached_model_ids according to eviction policy
     if(EVICTION_POLICY == 0){
         // FIFO eviction policy
@@ -3093,8 +3132,8 @@ uint64_t CascadeContext<CascadeTypes...>::select_models_to_evict(std::vector<uin
         while(cur_pos != end_pos){
             auto& action = single_threaded_action_queue_for_p2p.action_buffer[cur_pos];
             std::string pathname = (action.key_string).substr(0, action.prefix_length);
-            std::vector<DataFlowGraph::MLModelInfo> required_models_info = this->get_required_models_info(pathname);
-            for(const auto& model: required_models_info){
+            std::vector<DataFlowGraph::MLModelInfo> models_info = this->get_required_models_info(pathname);
+            for(const auto& model: models_info){
                 if(index_map.find(model.model_id) == index_map.end()){
                     index_map[model.model_id] = index;
                     index ++;
@@ -3120,11 +3159,12 @@ uint64_t CascadeContext<CascadeTypes...>::select_models_to_evict(std::vector<uin
         });
     }
     // 2. select models to evict from cache until required_memory is satisfied
-    uint64_t GPU_avaialble_memory = this->local_available_memory.load();
+    // uint64_t GPU_avaialble_memory = this->local_available_memory.load();
+    uint64_t freed_memory = 0;
     auto it = this->local_cached_model_ids.begin();
     while( it != this->local_cached_model_ids.end() ) {
-        if(required_memory <= GPU_avaialble_memory){
-            return GPU_avaialble_memory;
+        if(required_memory <= current_gpu_available_memory + freed_memory){
+            return freed_memory;
         }
         int32_t model_id = (int32_t)*it;
         // check if the model is required by this task, if so then skip it
@@ -3136,16 +3176,17 @@ uint64_t CascadeContext<CascadeTypes...>::select_models_to_evict(std::vector<uin
             continue;
         }
         models_to_evict.emplace_back(model_id);
-        GPU_avaialble_memory += this->local_ml_models_stats[model_id].model_size;
+        freed_memory += this->local_ml_models_stats[model_id].model_size;
         it = this->local_cached_model_ids.erase(it); 
     }
-    return GPU_avaialble_memory;
+    return freed_memory;
 }
 
 template <typename... CascadeTypes>
 bool CascadeContext<CascadeTypes...>::models_to_fetch_and_evict(std::string pathname,
                                                                 std::vector<uint32_t>& models_to_fetch,
-                                                                std::vector<uint32_t>& models_to_evict){
+                                                                std::vector<uint32_t>& models_to_evict,
+                                                                std::vector<uint32_t>& models_to_fetch_for_future){
     std::unique_lock wlck(this->local_cached_model_info_mutex);
     uint64_t required_memory = 0;
     std::vector<DataFlowGraph::MLModelInfo> required_model_info = this->get_required_models_info(pathname);
@@ -3159,18 +3200,31 @@ bool CascadeContext<CascadeTypes...>::models_to_fetch_and_evict(std::string path
             required_memory += model.model_size;
         }
     }
-    // 2. select models to be removed from GPU memory, below function also updates local_cached_model_ids
-    uint64_t gpu_memory_after_eviction = this->local_available_memory.load();
-    if(required_memory > gpu_memory_after_eviction){
-        gpu_memory_after_eviction = this->select_models_to_evict(models_to_evict, required_model_info, required_memory);
+    // 2. select models to be removed from GPU memory
+    uint64_t available_memory = this->local_available_memory.load();
+    if(required_memory > available_memory){
+        uint64_t freed_memory = this->select_models_to_evict(models_to_evict, required_model_info, required_memory, available_memory);
+        available_memory += freed_memory;
+    }else if(EVICTION_POLICY == 1){
+        uint64_t concurrent_prefetch_required_memory = this->look_ahead_queue_required_models(models_to_fetch_for_future, required_model_info, required_memory, available_memory);
+        // abort prefetching if not enough memory
+        if(concurrent_prefetch_required_memory + required_memory > available_memory){
+            models_to_fetch_for_future.clear();
+        }else{
+            required_memory += concurrent_prefetch_required_memory;
+        }
     }
-    uint64_t new_gpu_available_memory = gpu_memory_after_eviction - required_memory;
-    if(new_gpu_available_memory < 0){
-        dbg_default_warn("GPU memory is not enough to hold the required models");
+    // double check if GPU memory is enough to hold the required models
+    if(required_memory > available_memory){
+        dbg_default_warn("In {}, GPU memory is not enough to hold the required models", __PRETTY_FUNCTION__);
+        std::cout << "GPU memory is not enough to hold the required models" << std::endl;
         return false;
     }
-    if(!models_to_fetch.empty() || !models_to_evict.empty()){
-        this->update_local_model_info(models_to_fetch, models_to_evict, new_gpu_available_memory);
+    // 3. updated this node's local_cached_model_ids and local_available_memory
+    uint64_t new_gpu_available_memory = available_memory - required_memory;
+    if(!models_to_fetch.empty() || !models_to_evict.empty() || !models_to_fetch_for_future.empty()){
+        this->local_cached_model_ids.insert(this->local_cached_model_ids.end(), models_to_fetch.begin(), models_to_fetch.end());
+        this->local_available_memory.store(new_gpu_available_memory);
         this->local_cached_models_info_updated.store(true);
     }
     return true;
