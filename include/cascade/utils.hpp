@@ -415,20 +415,20 @@ public:
  * Flag for experimentation purposes
  * 0 : FIFO | 1: LookAheadEvict
 */
-#define EVICTION_POLICY                             (1)
+#define EVICTION_POLICY                             (0)
 
 /**
  * For LOOK_AHEAD EVICTION/PREFETCH local cache management
  * Number prefetching future models while running model execution
  * TODO: currently only support 1
 */
-#define NUM_MODELS_FETCH_FOR_FUTURE                 (1)
+#define NUM_MODELS_FETCH_FOR_FUTURE                 (0)
 
 /**
  * For LOOK_AHEAD EVICTION/PREFETCH local cache management
  * How far(number of actions) should local cache manager look ahead to prefetch future models
 */
-#define NUM_ACTIONS_LOOK_AHEAD_LIMIT                (2)
+#define NUM_ACTIONS_LOOK_AHEAD_LIMIT                (0)
 
 /*
  * For UDLs:
