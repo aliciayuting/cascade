@@ -2410,7 +2410,13 @@ void CascadeContext<CascadeTypes...>::construct() {
             });
 
 #endif  // HAS_STATEFUL_UDL_SUPPORT
-    // 2.6 - initialize scheduler worker 
+    // 3. initialize scheduler setting from config
+    this->scheduler_type = derecho::getConfUInt32(CASCADE_CONTEXT_SCHEDULER_TYPE);
+    this->reschedule_threashold_factor = derecho::getConfFloat(CASCADE_CONTEXT_RESCHEDULE_THREASHOLD_FACTOR);
+    this->eviction_policy = derecho::getConfUInt32(CASCADE_CONTEXT_EVICTION_POLICY);
+    this->num_models_fetch_for_future = derecho::getConfUInt32(CASCADE_CONTEXT_NUM_MODELS_FETCH_FOR_FUTURE);
+    this->num_actions_look_ahead_limit = derecho::getConfUInt32(CASCADE_CONTEXT_NUM_ACTIONS_LOOK_AHEAD_LIMIT);
+    // 3.1 - initialize scheduler worker 
     scheduler_workhorse = std::thread(
             [this]() {
                 this->tide_scheduler_workhorse(0xFFFFFFFF, unscheduled_action_queue);
@@ -2497,10 +2503,10 @@ void CascadeContext<CascadeTypes...>::fire_scheduler(Action&& action,uint32_t wo
     dbg_default_trace("CascadeContext<CascadeTypes...>::fire_scheduler() worker[{}] for action key: [{}]", worker_id, action.key_string);
     std::string vertex_pathname = (action.key_string).substr(0, action.prefix_length);
     uint64_t before_scheduler_us = get_time_us(true);
-    switch(SCHEDULER_TYPE){
-        case 0:
+    switch(this->scheduler_type){
+        case 0: {
             action.adfg = this->tide_scheduler(vertex_pathname);   // Note: remember to save adfg to objectWithStringKey at emit() 
-            break;
+        }break;
         case 1: {
             std::string key = (action.key_string).substr(action.prefix_length);
             action.adfg = this->hash_scheduler(vertex_pathname, key);
@@ -3064,7 +3070,7 @@ uint64_t CascadeContext<CascadeTypes...>::look_ahead_queue_required_models(std::
                                                                     const std::vector<DataFlowGraph::MLModelInfo>& required_model_info,
                                                                     const std::uint64_t& required_memory,
                                                                     const std::uint64_t& current_gpu_available_memory){
-    size_t num_models_to_fetch_for_future = 0;
+    size_t cur_num_models_to_fetch_for_future = 0;
     size_t num_actions_look_ahead = 0;
     uint64_t total_required_memory = 0;
     uint64_t available_memory_for_prefetch = current_gpu_available_memory - required_memory;
@@ -3075,7 +3081,7 @@ uint64_t CascadeContext<CascadeTypes...>::look_ahead_queue_required_models(std::
         std::string pathname = (action.key_string).substr(0, action.prefix_length);
         std::vector<DataFlowGraph::MLModelInfo> models_info = this->get_required_models_info(pathname);
         for(const auto& model: models_info){
-            if (num_models_to_fetch_for_future < NUM_MODELS_FETCH_FOR_FUTURE){
+            if (cur_num_models_to_fetch_for_future < this->num_models_fetch_for_future){
                 // check if model is already in cache
                 int32_t model_id = model.model_id;
                 auto it_current_required = std::find_if(required_model_info.begin(), required_model_info.end(),[model_id](const DataFlowGraph::MLModelInfo& r_model){
@@ -3092,10 +3098,10 @@ uint64_t CascadeContext<CascadeTypes...>::look_ahead_queue_required_models(std::
                     }else{
                         models_to_fetch_for_future.emplace_back(model.model_id);
                         this->local_cached_model_ids.emplace_back(model.model_id);
-                        num_models_to_fetch_for_future ++;
+                        cur_num_models_to_fetch_for_future ++;
                         total_required_memory += model.model_size;
                         // stop looking ahead if enough models are found
-                        if (num_models_to_fetch_for_future >= NUM_MODELS_FETCH_FOR_FUTURE){
+                        if (cur_num_models_to_fetch_for_future >= this->num_models_fetch_for_future){
                             return total_required_memory;
                         }
                     }
@@ -3105,7 +3111,7 @@ uint64_t CascadeContext<CascadeTypes...>::look_ahead_queue_required_models(std::
         cur_pos = (cur_pos + 1) % ACTION_BUFFER_SIZE;
         // only look ahead for NUM_ACTIONS_LOOK_AHEAD actions, not to overlook ahead
         num_actions_look_ahead ++;
-        if (num_actions_look_ahead >= NUM_ACTIONS_LOOK_AHEAD_LIMIT){
+        if (num_actions_look_ahead >= this->num_actions_look_ahead_limit){
             break;
         }
     }
@@ -3118,10 +3124,10 @@ uint64_t CascadeContext<CascadeTypes...>::select_models_to_evict(std::vector<uin
                                                             const std::uint64_t& required_memory,
                                                             const std::uint64_t& current_gpu_available_memory){
     // 1. order local_cached_model_ids according to eviction policy
-    if(EVICTION_POLICY == 0){
+    if(this->eviction_policy == 0){
         // FIFO eviction policy
         dbg_default_trace("Select_models_to_evict() uses FIFO eviction policy");
-    }else if(EVICTION_POLICY == 1){
+    }else if(this->eviction_policy == 1){
         // LOOK_AHEAD eviction policy: prioritize to evict the models that are not going to be used in the near future.
         dbg_default_trace("Select_models_to_evict() uses LOOK_AHEAD eviction policy");
         // 1.1. collect index_map(model_id->position in task_queue)
@@ -3205,7 +3211,7 @@ bool CascadeContext<CascadeTypes...>::models_to_fetch_and_evict(std::string path
     if(required_memory > available_memory){
         uint64_t freed_memory = this->select_models_to_evict(models_to_evict, required_model_info, required_memory, available_memory);
         available_memory += freed_memory;
-    }else if(EVICTION_POLICY == 1){
+    }else if(this->eviction_policy == 1){
         uint64_t concurrent_prefetch_required_memory = this->look_ahead_queue_required_models(models_to_fetch_for_future, required_model_info, required_memory, available_memory);
         // abort prefetching if not enough memory
         if(concurrent_prefetch_required_memory + required_memory > available_memory){
@@ -3280,15 +3286,15 @@ node_id_t CascadeContext<CascadeTypes...>::next_task_scheduled_node_id(bool& sch
         return 0;
     }
     // Only TIDE and JIT schedule dynamically
-    if(SCHEDULER_TYPE == 1 || SCHEDULER_TYPE == 2){ // experiment purposes
+    if(this->scheduler_type == 1 || this->scheduler_type == 2){ // experiment purposes
         return scheduled_node_id;
     }
     // 2. Check if the intially assigned worker is still a good choice. If not, re-schedule
     auto& task_info = prefix_to_task_info[task_name];
     uint64_t wait_threashold = 0;
     // TIDE scheduler prioritize the original plan, only reschedule when wait_threashold exceed the limit
-    if (SCHEDULER_TYPE == 0){
-        wait_threashold = RESCHEDULE_THREASHOLD_FACTOR * task_info.expected_execution_timeus;
+    if (this->scheduler_type == 0){
+        wait_threashold = this->reschedule_threashold_factor * task_info.expected_execution_timeus;
     }
     // Two cases require reschedule.
     // case 2.1 if it is not a joint task in the dfg, and the previously scheduled_node_id has waittime longer than threashold

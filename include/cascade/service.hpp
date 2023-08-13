@@ -1736,6 +1736,11 @@ namespace cascade {
     #define CASCADE_CONTEXT_WORKER_CPU_AFFINITY     "CASCADE/worker_cpu_affinity"
     #define LOAD_INFO_DISSEMINATION_RATE            "INFOSST/load_info_update_rate"
     #define CACHE_INFO_DISSEMINATION_RATE           "INFOSST/cache_info_update_rate"
+    #define CASCADE_CONTEXT_SCHEDULER_TYPE          "CASCADE/scheduler_type"
+    #define CASCADE_CONTEXT_RESCHEDULE_THREASHOLD_FACTOR            "CASCADE/reschedule_threashold_factor"  
+    #define CASCADE_CONTEXT_EVICTION_POLICY                         "CASCADE/eviction_policy"
+    #define CASCADE_CONTEXT_NUM_MODELS_FETCH_FOR_FUTURE             "CASCADE/num_models_fetch_for_future"
+    #define CASCADE_CONTEXT_NUM_ACTIONS_LOOK_AHEAD_LIMIT           "CASCADE/num_actions_look_ahead_limit"
 
     /**
      * A class describing the resources available in the Cascade context.
@@ -1831,7 +1836,7 @@ namespace cascade {
 #endif//HAS_STATEFUL_UDL_SUPPORT
         std::thread              scheduler_workhorse;  // scheduler thread
         
-         /** information used by scheduler 
+        /** information used by scheduler 
          * mapping between {entry_pathname of the dfg -> DataFlowGraph::TaskInfo}
          */
         std::unordered_map<std::string, DataFlowGraph::TaskInfo> prefix_to_task_info;
@@ -1850,6 +1855,12 @@ namespace cascade {
         mutable std::shared_mutex      group_queue_wait_times_mutex;
         std::atomic<uint64_t>   last_group_cached_models_info_update_timeus;
         std::atomic<uint64_t>   last_group_queue_wait_times_update_timeus;
+        // Scheduler's Setting
+        uint32_t                scheduler_type;
+        float                   reschedule_threashold_factor;
+        uint32_t                eviction_policy;
+        uint32_t                num_models_fetch_for_future;
+        uint32_t                num_actions_look_ahead_limit;
 
         /**
          * destroy the context, to be called in destructor
