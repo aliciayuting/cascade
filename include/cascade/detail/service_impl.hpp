@@ -3291,7 +3291,7 @@ node_id_t CascadeContext<CascadeTypes...>::next_task_scheduled_node_id(bool& sch
     }
     // 2. Check if the intially assigned worker is still a good choice. If not, re-schedule
     auto& task_info = prefix_to_task_info[task_name];
-    uint64_t wait_threashold = 0;
+    uint64_t wait_threashold = 0;  // JIT(schedule_type==3) reschedules any task to the node with shortest queue wait time
     // TIDE scheduler prioritize the original plan, only reschedule when wait_threashold exceed the limit
     if (this->scheduler_type == 0){
         wait_threashold = this->reschedule_threashold_factor * task_info.expected_execution_timeus;
@@ -3411,8 +3411,8 @@ std::string CascadeContext<CascadeTypes...>::tide_scheduler(std::string entry_pr
         uint64_t earliest_finish_time = earliest_start_time + GPU_to_GPU_delay(task_info.input_size) + task_info.expected_execution_timeus;
         allocated_tasks_info[task_name] = {selected_worker_id, earliest_finish_time};
         earliest_available_times[selected_worker_id] = earliest_finish_time;
-        if(fetching_model_size > 0){
-            c_group_available_memory[selected_worker_id] += fetching_model_size;
+        if(fetching_model_size > 0 && c_group_available_memory[selected_worker_id] >= fetching_model_size){
+            c_group_available_memory[selected_worker_id] -= fetching_model_size;
         }
     }
     std::string allocated_machines;
