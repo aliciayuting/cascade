@@ -3405,8 +3405,8 @@ std::string CascadeContext<CascadeTypes...>::tide_scheduler(std::string entry_pr
         uint64_t earliest_finish_time = earliest_start_time + GPU_to_GPU_delay(task_info.input_size) + task_info.expected_execution_timeus;
         allocated_tasks_info[task_name] = {selected_worker_id, earliest_finish_time};
         earliest_available_times[selected_worker_id] = earliest_finish_time;
-        if(fetching_model_size > 0){
-            c_group_available_memory[selected_worker_id] += fetching_model_size;
+        if(fetching_model_size > 0 && c_group_available_memory[selected_worker_id] >= fetching_model_size){
+            c_group_available_memory[selected_worker_id] -= fetching_model_size;
         }
     }
     std::string allocated_machines;
