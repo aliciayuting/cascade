@@ -411,6 +411,7 @@ public:
  * 0: no reschedule joint task | 1: reschedule joint task
 */
 #define RESCHEDULE_JOINT_TASK                       (0)
+#define CONSIDER_GPU_LIMIT                          (0)
 // /**
 //  * Flag for experimentation purposes
 //  * 0 : FIFO | 1: LookAheadEvict
