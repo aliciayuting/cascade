@@ -3003,7 +3003,7 @@ uint64_t CascadeContext<CascadeTypes...>::check_queue_wait_time(node_id_t node_i
         return local_queue_wait_time.load();
     }
     uint64_t cur_us = get_time_us(true);
-    auto interval = 60.0 * 1000000 / derecho::getConfUInt32(LOAD_INFO_DISSEMINATION_RATE);
+    auto interval = 1000 * derecho::getConfUInt32(LOAD_INFO_DISSEMINATION_DELAY);
     if(cur_us - last_group_queue_wait_times_update_timeus > interval) {
         last_group_queue_wait_times_update_timeus = cur_us;
         std::unique_lock<std::shared_mutex> wlck(this->group_queue_wait_times_mutex);
@@ -3027,7 +3027,7 @@ bool CascadeContext<CascadeTypes...>::check_if_model_in_gpu(node_id_t node_id, u
         return it != this->local_cached_model_ids.end();
     }
     uint64_t cur_us = get_time_us(true);
-    auto interval = 60.0 * 1000000 / derecho::getConfUInt32(CACHE_INFO_DISSEMINATION_RATE);
+    auto interval = 1000 * derecho::getConfUInt32(CACHE_INFO_DISSEMINATION_DELAY);
     if(cur_us - last_group_cached_models_info_update_timeus > interval) {
         last_group_cached_models_info_update_timeus = cur_us;
         std::unique_lock<std::shared_mutex> wlck(this->group_cached_models_info_mutex);
