@@ -2416,6 +2416,7 @@ void CascadeContext<CascadeTypes...>::construct() {
     this->eviction_policy = derecho::getConfUInt32(CASCADE_CONTEXT_EVICTION_POLICY);
     this->num_models_fetch_for_future = derecho::getConfUInt32(CASCADE_CONTEXT_NUM_MODELS_FETCH_FOR_FUTURE);
     this->num_actions_look_ahead_limit = derecho::getConfUInt32(CASCADE_CONTEXT_NUM_ACTIONS_LOOK_AHEAD_LIMIT);
+    this->consider_gpu_model_locality = derecho::getConfUInt32(CASCADE_CONTEXT_CONSIDER_GPU_MODEL_LOCALITY);
     // 3.1 - initialize scheduler worker 
     scheduler_workhorse = std::thread(
             [this]() {
@@ -3314,14 +3315,14 @@ node_id_t CascadeContext<CascadeTypes...>::next_task_scheduled_node_id(bool& sch
             if(cur_worker == local_node_id){
                 cur_available_memory = this->local_available_memory;
             }
-            for(auto& model_info: task_info.models_info){
-                if(!this->check_if_model_in_gpu(cur_worker, model_info.model_id)){
-                    model_fetch_time += host_to_GPU_delay(model_info.model_size);
-                    // count for delay because of model eviction due to memory limit
-                    if (CONSIDER_GPU_LIMIT){
-                        if(cur_available_memory < model_info.model_size){
-                            model_fetch_time += host_to_GPU_delay(model_info.model_size);   // use host_to_GPU_delay to estimate model eviction delay
-                        }
+            if (this->consider_gpu_model_locality == 1){
+                for(auto& model_info: task_info.models_info){
+                    if(!this->check_if_model_in_gpu(cur_worker, model_info.model_id)){
+                        model_fetch_time += host_to_GPU_delay(model_info.model_size);
+                            // count for delay because of model eviction due to memory limit
+                            if(cur_available_memory < model_info.model_size){
+                                model_fetch_time += host_to_GPU_delay(model_info.model_size);   // use host_to_GPU_delay to estimate model eviction delay
+                            }
                     }
                 }
             }
@@ -3389,16 +3390,16 @@ std::string CascadeContext<CascadeTypes...>::tide_scheduler(std::string entry_pr
             cur_earliest_start_time = std::max(cur_earliest_start_time, inputs_arrival_time);
             uint64_t model_fetch_time = 0;
             uint64_t cur_fetching_model_size = 0;
-            for(auto& model_info: task_info.models_info){
-                if(!this->check_if_model_in_gpu(cur_worker, model_info.model_id)){
-                    model_fetch_time += host_to_GPU_delay(model_info.model_size);
-                    // count for delay because of model eviction due to memory limit
-                    if (CONSIDER_GPU_LIMIT){
-                            if(c_group_available_memory[cur_worker] < model_info.model_size){
-                            model_fetch_time += host_to_GPU_delay(model_info.model_size);   // use host_to_GPU_delay to estimate model eviction delay
-                        }
+            if (this->consider_gpu_model_locality == 1){
+                for(auto& model_info: task_info.models_info){
+                    if(!this->check_if_model_in_gpu(cur_worker, model_info.model_id)){
+                        model_fetch_time += host_to_GPU_delay(model_info.model_size);
+                        // count for delay because of model eviction due to memory limit
+                                if(c_group_available_memory[cur_worker] < model_info.model_size){
+                                model_fetch_time += host_to_GPU_delay(model_info.model_size);   // use host_to_GPU_delay to estimate model eviction delay
+                            }
+                        cur_fetching_model_size += model_info.model_size;
                     }
-                    cur_fetching_model_size += model_info.model_size;
                 }
             }
             cur_earliest_start_time = std::max(earliest_available_times[cur_worker], cur_earliest_start_time) + model_fetch_time;

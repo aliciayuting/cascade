@@ -1741,6 +1741,7 @@ namespace cascade {
     #define CASCADE_CONTEXT_EVICTION_POLICY                         "CASCADE/eviction_policy"
     #define CASCADE_CONTEXT_NUM_MODELS_FETCH_FOR_FUTURE             "CASCADE/num_models_fetch_for_future"
     #define CASCADE_CONTEXT_NUM_ACTIONS_LOOK_AHEAD_LIMIT           "CASCADE/num_actions_look_ahead_limit"
+    #define CASCADE_CONTEXT_CONSIDER_GPU_MODEL_LOCALITY             "CASCADE/consider_gpu_model_locality"
 
     /**
      * A class describing the resources available in the Cascade context.
@@ -1861,6 +1862,7 @@ namespace cascade {
         uint32_t                eviction_policy;
         uint32_t                num_models_fetch_for_future;
         uint32_t                num_actions_look_ahead_limit;
+        uint32_t                consider_gpu_model_locality;
 
         /**
          * destroy the context, to be called in destructor
