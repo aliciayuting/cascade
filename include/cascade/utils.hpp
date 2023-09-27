@@ -394,11 +394,6 @@ public:
   */
 #define GPU_MEMORY_SIZE                             (14000000)  /** in KB*/
 
-/** 
- * Flag for experimentation purposes
- * 0 : TIDE | 1: HASH | 2: HEFT | 3: JIT
-*/
-#define SCHEDULER_TYPE                              (0)
 /**
  * For scheduler to decide if were to reschedule the next tasks if the 
  * current global workers' states shifted since the scheduler earlier.
@@ -408,14 +403,17 @@ public:
 #define RESCHEDULE_THREASHOLD_FACTOR                (1.5)
 /**
  * Flag for experimentation purposes
- * 0: no reschedule joint task | 1: reschedule joint task
-*/
-#define RESCHEDULE_JOINT_TASK                       (0)
-/**
- * Flag for experimentation purposes
  * 0 : FIFO | 1: LookAheadEvict
 */
-#define EVICTION_POLICY                             (0)
+#define EVICTION_POLICY                             (1)
+/**
+ * LookAheadEviction policy parameter determines the number of models to prefetch
+*/
+#define NUM_MODELS_LOOKAHEAD                        (0)
+/**
+ * LookAheadEviction policy paramter determines the number of actions to lookAhead
+*/
+#define NUM_ACTIONS_LOOKAHEAD                       (0)
 
 /*
  * For UDLs:

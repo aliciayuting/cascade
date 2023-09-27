@@ -2275,8 +2275,6 @@ void CascadeContext<CascadeTypes...>::construct() {
                 this->local_ml_models_stats.emplace(model_info.model_id, model_stats);
             }
         }
-        // Testing purposes
-        dfg.dump();
     }
     // 2 - start the working threads
     is_running.store(true);
@@ -2412,7 +2410,7 @@ void CascadeContext<CascadeTypes...>::construct() {
             });
 
 #endif  // HAS_STATEFUL_UDL_SUPPORT
-    // 2.6 - initialize scheduler worker 
+    // 3.1 - initialize scheduler worker 
     scheduler_workhorse = std::thread(
             [this]() {
                 this->tide_scheduler_workhorse(0xFFFFFFFF, unscheduled_action_queue);
@@ -2452,36 +2450,7 @@ void CascadeContext<CascadeTypes...>::tide_scheduler_workhorse(uint32_t worker_i
         // waiting for an action
         Action action = std::move(aq.action_buffer_dequeue(is_running));
         if(!action) continue;
-        if(!RESCHEDULE_JOINT_TASK){
-            this->fire_scheduler(std::move(action), worker_id);
-        }else{
-            // case 1. entry task to be schedule the whole job
-            if(action.required_object_pathnames.size() == 0){
-                this->fire_scheduler(std::move(action), worker_id);
-            }else{
-                // 2. joint task to be rescheduled
-                std::string vertex_pathname = (action.key_string).substr(0, action.prefix_length);
-                bool scheduled;
-                node_id_t scheduled_node = next_task_scheduled_node_id(scheduled, vertex_pathname, action.adfg, true);
-                action.set_value_ptrs_num_reallocate(1);   // ALICIA TODO: double check this
-                std::string trace_str = "_node:" + std::to_string(scheduled_node) + ", ";
-                if(scheduled_node == this->get_service_client_ref().get_my_id()){
-                    trace_str = " sending rescheduled_obj: " + action.key_string + " to the same node.";
-                    this->post(std::move(action),action.stateful,action.is_trigger);
-                }else{
-                    // send all the intermediate result to the scheduled worker node
-                    std::string trace_str = " sending rescheduled_objs: ";
-                    for(size_t i = 0; i < action.required_object_pathnames.size(); i++){
-                        auto* object_ptr = reinterpret_cast<ObjectWithStringKey*>(action.value_ptrs.at(i).get());
-                        trace_str += "(key:" + object_ptr->get_key_ref() + ", prev_key:" + object_ptr->get_source_key() + "), ";
-                        // object_ptr->set_num_reallocate(1);
-                        this->get_service_client_ref().single_node_trigger_put((*object_ptr), scheduled_node);
-                    }
-                    trace_str += " to node " + std::to_string(scheduled_node);
-                }
-                dbg_default_trace(trace_str);
-            }
-        }
+        this->fire_scheduler(std::move(action), worker_id);
         if(!is_running) {
             do {
                 action = std::move(aq.action_buffer_dequeue(is_running));
@@ -2499,21 +2468,7 @@ void CascadeContext<CascadeTypes...>::fire_scheduler(Action&& action,uint32_t wo
     dbg_default_trace("CascadeContext<CascadeTypes...>::fire_scheduler() worker[{}] for action key: [{}]", worker_id, action.key_string);
     std::string vertex_pathname = (action.key_string).substr(0, action.prefix_length);
     uint64_t before_scheduler_us = get_time_us(true);
-    switch(SCHEDULER_TYPE){
-        case 0:
-            action.adfg = this->tide_scheduler(vertex_pathname);   // Note: remember to save adfg to objectWithStringKey at emit() 
-            break;
-        case 1: {
-            std::string key = (action.key_string).substr(action.prefix_length);
-            action.adfg = this->hash_scheduler(vertex_pathname, key);
-        }break;
-        case 2: {
-            action.adfg = this->heft_scheduler(vertex_pathname);
-        }break;
-        case 3:
-            std::string key = (action.key_string).substr(action.prefix_length);
-            action.adfg = this->hash_scheduler(vertex_pathname, key);
-    }
+    action.adfg = this->tide_scheduler(vertex_pathname);   // Note: remember to save adfg to objectWithStringKey at emit() 
     uint64_t after_scheduler_us = get_time_us(true);
     dbg_default_trace("~ vertex_pathname: {}, scheduled adfg: {}, time[{}]us", vertex_pathname, action.adfg, after_scheduler_us - before_scheduler_us);
     if(!action.adfg.empty()){
@@ -2872,22 +2827,12 @@ void CascadeContext<CascadeTypes...>::find_handlers_and_local_post(ObjectWithStr
 #endif
                     std::get<1>(handler.second),  // stateful
                     is_trigger);
-                    bool joint_task_to_reallocate = false;
-                    if (RESCHEDULE_JOINT_TASK){
-                        if(action.required_object_pathnames.size() > 1 && value_ptr->get_num_reallocate() == 0){
-                            dbg_default_trace("find_handlers_and_local_post() escheduled joint task({}) ", action.key_string);
-                            this->post_to_scheduler(std::move(action));
-                            joint_task_to_reallocate = true;
-                        }
-                    }
-                    if (!joint_task_to_reallocate){
-                        // post action
+                    // post action
 #ifdef HAS_STATEFUL_UDL_SUPPORT
-                        this->post(std::move(action), std::get<1>(handler.second), is_trigger);
+                    this->post(std::move(action), std::get<1>(handler.second), is_trigger);
 #else
-                        this->post(std::move(action), is_trigger);
+                    this->post(std::move(action), is_trigger);
 #endif//HAS_STATEFUL_UDL_SUPPORT
-                    }
                 }
             }
 
@@ -2973,13 +2918,7 @@ bool CascadeContext<CascadeTypes...>::post(Action&& action, bool is_trigger) {
 
 template <typename... CascadeTypes>
 bool CascadeContext<CascadeTypes...>::post_to_scheduler(Action&& action) {
-    bool emplace_to_existing_queued_task = false;
-    if(RESCHEDULE_JOINT_TASK && action.required_object_pathnames.size() > 1){
-        emplace_to_existing_queued_task = unscheduled_action_queue.action_buffer_emplace(action);
-    }
-    if(!emplace_to_existing_queued_task){
-        unscheduled_action_queue.action_buffer_enqueue(std::move(action));
-    }
+    unscheduled_action_queue.action_buffer_enqueue(std::move(action));
     return true;
 }
 
@@ -3048,21 +2987,6 @@ std::vector<DataFlowGraph::MLModelInfo> CascadeContext<CascadeTypes...>::get_req
     return std::vector<DataFlowGraph::MLModelInfo>();
 }
 
-
-template <typename... CascadeTypes>
-void CascadeContext<CascadeTypes...>::update_local_model_info(const std::vector<uint32_t>& models_to_fetch,
-                                                              const std::vector<uint32_t>& models_to_evict,
-                                                              const uint64_t& new_gpu_available_memory){
-    this->local_cached_model_ids.erase(std::remove_if(this->local_cached_model_ids.begin(), 
-                                        this->local_cached_model_ids.end(), 
-                                        [&models_to_evict](int model) {
-                                            return std::find(models_to_evict.begin(), models_to_evict.end(), model) != models_to_evict.end();
-                                        }), 
-                                        this->local_cached_model_ids.end());
-    this->local_cached_model_ids.insert(this->local_cached_model_ids.end(), models_to_fetch.begin(), models_to_fetch.end());
-    this->local_available_memory.store(new_gpu_available_memory);
-}
-
 template <typename... CascadeTypes>
 void CascadeContext<CascadeTypes...>::send_local_cached_models_info(){
     std::shared_lock rlck(this->local_cached_model_info_mutex);
@@ -3077,39 +3001,133 @@ void CascadeContext<CascadeTypes...>::send_local_cached_models_info(){
 }
 
 template <typename... CascadeTypes>
-uint64_t CascadeContext<CascadeTypes...>::select_models_to_evict(std::vector<uint32_t>& models_to_evict,
-                                                            const std::vector<DataFlowGraph::MLModelInfo>& required_model_info, 
-                                                            const std::uint64_t& required_memory){
-    uint64_t GPU_avaialble_memory = this->local_available_memory.load();
-    // FIFO eviction policy
-    if(EVICTION_POLICY == 0){
-        dbg_default_trace("Select_models_to_evict() uses FIFO eviction policy");
-        auto it = this->local_cached_model_ids.begin();
-        while( it != this->local_cached_model_ids.end() ) {
-            if(required_memory <= GPU_avaialble_memory){
-                return GPU_avaialble_memory;
+uint64_t CascadeContext<CascadeTypes...>::look_ahead_queue_required_models(std::vector<uint32_t>& models_to_fetch_for_future,
+                                                                    const std::vector<DataFlowGraph::MLModelInfo>& required_model_info,
+                                                                    const std::uint64_t& required_memory,
+                                                                    const std::uint64_t& current_gpu_available_memory){
+    size_t cur_num_models_to_fetch_for_future = 0;
+    size_t num_actions_look_ahead = 0;
+    uint64_t total_required_memory = 0;
+    uint64_t available_memory_for_prefetch = current_gpu_available_memory - required_memory;
+    size_t cur_pos = single_threaded_action_queue_for_p2p.action_buffer_head.load();
+    size_t end_pos = single_threaded_action_queue_for_p2p.action_buffer_tail.load();
+    while(cur_pos != end_pos){
+        auto& action = single_threaded_action_queue_for_p2p.action_buffer[cur_pos];
+        std::string pathname = (action.key_string).substr(0, action.prefix_length);
+        std::vector<DataFlowGraph::MLModelInfo> models_info = this->get_required_models_info(pathname);
+        for(const auto& model: models_info){
+            if (cur_num_models_to_fetch_for_future < NUM_MODELS_LOOKAHEAD){
+                // check if model is already in cache
+                int32_t model_id = model.model_id;
+                auto it_current_required = std::find_if(required_model_info.begin(), required_model_info.end(),[model_id](const DataFlowGraph::MLModelInfo& r_model){
+                                                return r_model.model_id == model_id;    
+                                            });
+                auto it_local_cache = std::find(this->local_cached_model_ids.begin(), this->local_cached_model_ids.end(), model_id);
+                if(it_current_required == required_model_info.end() && it_local_cache == this->local_cached_model_ids.end()){
+                    /** Stop looking ahead for more models, once see a required model cannot no longer fit to available memory.
+                     *  This is to avoid unnecesary model movement. Want to pre-fetch the models required by earlier task, before pre-fetching models for later tasks
+                     *  Since fetching later required models before earlier ones, may lead eviction of them to make room for earlier ones
+                    */
+                    if (total_required_memory + model.model_size > available_memory_for_prefetch){
+                        return total_required_memory;
+                    }else{
+                        models_to_fetch_for_future.emplace_back(model.model_id);
+                        this->local_cached_model_ids.emplace_back(model.model_id);
+                        cur_num_models_to_fetch_for_future ++;
+                        total_required_memory += model.model_size;
+                        // stop looking ahead if enough models are found
+                        if (cur_num_models_to_fetch_for_future >= NUM_MODELS_LOOKAHEAD){
+                            return total_required_memory;
+                        }
+                    }
+                }
             }
-            int32_t model_id = (int32_t)*it;
-            // check if the model is required by this task, if so then skip it
-            auto required_model_it = std::find_if(required_model_info.begin(), required_model_info.end(),[model_id](const DataFlowGraph::MLModelInfo& model){
-                                                    return model.model_id == model_id;    
-                                                });
-            if(required_model_it != required_model_info.end()){
-                it ++;
-                continue;
-            }
-            models_to_evict.emplace_back(model_id);
-            GPU_avaialble_memory += this->local_ml_models_stats[model_id].model_size;
-            it = this->local_cached_model_ids.erase(it); 
+        }
+        cur_pos = (cur_pos + 1) % ACTION_BUFFER_SIZE;
+        // only look ahead for NUM_ACTIONS_LOOKAHEAD actions, not to overlook ahead
+        num_actions_look_ahead ++;
+        if (num_actions_look_ahead >= NUM_ACTIONS_LOOKAHEAD){
+            break;
         }
     }
-    return GPU_avaialble_memory;
+    return total_required_memory;
+}
+
+template <typename... CascadeTypes>
+uint64_t CascadeContext<CascadeTypes...>::select_models_to_evict(std::vector<uint32_t>& models_to_evict,
+                                                            const std::vector<DataFlowGraph::MLModelInfo>& required_model_info, 
+                                                            const std::uint64_t& required_memory,
+                                                            const std::uint64_t& current_gpu_available_memory){
+    // 1. order local_cached_model_ids according to eviction policy
+    if(EVICTION_POLICY == 0){
+        // FIFO eviction policy
+        dbg_default_trace("Select_models_to_evict() uses FIFO eviction policy");
+    }else if(EVICTION_POLICY == 1){
+        // LOOK_AHEAD eviction policy: prioritize to evict the models that are not going to be used in the near future.
+        dbg_default_trace("Select_models_to_evict() uses LOOK_AHEAD eviction policy");
+        // 1.1. collect index_map(model_id->position in task_queue)
+        std::unordered_map<uint32_t, size_t> index_map;
+        size_t cur_pos = single_threaded_action_queue_for_p2p.action_buffer_head.load();
+        size_t end_pos = single_threaded_action_queue_for_p2p.action_buffer_tail.load();
+        size_t index = 0;
+        while(cur_pos != end_pos){
+            auto& action = single_threaded_action_queue_for_p2p.action_buffer[cur_pos];
+            std::string pathname = (action.key_string).substr(0, action.prefix_length);
+            std::vector<DataFlowGraph::MLModelInfo> models_info = this->get_required_models_info(pathname);
+            for(const auto& model: models_info){
+                if(index_map.find(model.model_id) == index_map.end()){
+                    index_map[model.model_id] = index;
+                    index ++;
+                }
+            }
+            cur_pos = (cur_pos + 1) % ACTION_BUFFER_SIZE;
+        }
+        /** 1.2. reorder local_cached_model_ids,
+         * such that the earlier the model appear in the task_queue, 
+         * the later it appears in local_cached_model_ids, less likely to be evicted
+         */
+        std::sort(this->local_cached_model_ids.begin(), this->local_cached_model_ids.end(), 
+                    [&index_map](int model1, int model2){
+            auto it1 = index_map.find(model1);
+            auto it2 = index_map.find(model2);
+            if(it1 == index_map.end()){
+                return true;
+            }
+            if(it2 == index_map.end()){
+                return false;
+            }
+            return it1->second > it2->second;
+        });
+    }
+    // 2. select models to evict from cache until required_memory is satisfied
+    // uint64_t GPU_avaialble_memory = this->local_available_memory.load();
+    uint64_t freed_memory = 0;
+    auto it = this->local_cached_model_ids.begin();
+    while( it != this->local_cached_model_ids.end() ) {
+        if(required_memory <= current_gpu_available_memory + freed_memory){
+            return freed_memory;
+        }
+        int32_t model_id = (int32_t)*it;
+        // check if the model is required by this task, if so then skip it
+        auto required_model_it = std::find_if(required_model_info.begin(), required_model_info.end(),[model_id](const DataFlowGraph::MLModelInfo& model){
+                                                return model.model_id == model_id;    
+                                            });
+        if(required_model_it != required_model_info.end()){
+            it ++;
+            continue;
+        }
+        models_to_evict.emplace_back(model_id);
+        freed_memory += this->local_ml_models_stats[model_id].model_size;
+        it = this->local_cached_model_ids.erase(it); 
+    }
+    return freed_memory;
 }
 
 template <typename... CascadeTypes>
 bool CascadeContext<CascadeTypes...>::models_to_fetch_and_evict(std::string pathname,
                                                                 std::vector<uint32_t>& models_to_fetch,
-                                                                std::vector<uint32_t>& models_to_evict){
+                                                                std::vector<uint32_t>& models_to_evict,
+                                                                std::vector<uint32_t>& models_to_fetch_for_future){
     std::unique_lock wlck(this->local_cached_model_info_mutex);
     uint64_t required_memory = 0;
     std::vector<DataFlowGraph::MLModelInfo> required_model_info = this->get_required_models_info(pathname);
@@ -3123,15 +3141,31 @@ bool CascadeContext<CascadeTypes...>::models_to_fetch_and_evict(std::string path
             required_memory += model.model_size;
         }
     }
-    // 2. select models to be removed from GPU memory, below function also updates local_cached_model_ids
-    uint64_t gpu_memory_after_eviction = this->select_models_to_evict(models_to_evict, required_model_info, required_memory);
-    uint64_t new_gpu_available_memory = gpu_memory_after_eviction - required_memory;
-    if(new_gpu_available_memory < 0){
-        dbg_default_warn("GPU memory is not enough to hold the required models");
+    // 2. select models to be removed from GPU memory
+    uint64_t available_memory = this->local_available_memory.load();
+    if(required_memory > available_memory){
+        uint64_t freed_memory = this->select_models_to_evict(models_to_evict, required_model_info, required_memory, available_memory);
+        available_memory += freed_memory;
+    }else if(EVICTION_POLICY == 1){
+        uint64_t concurrent_prefetch_required_memory = this->look_ahead_queue_required_models(models_to_fetch_for_future, required_model_info, required_memory, available_memory);
+        // abort prefetching if not enough memory
+        if(concurrent_prefetch_required_memory + required_memory > available_memory){
+            models_to_fetch_for_future.clear();
+        }else{
+            required_memory += concurrent_prefetch_required_memory;
+        }
+    }
+    // double check if GPU memory is enough to hold the required models
+    if(required_memory > available_memory){
+        dbg_default_warn("In {}, GPU memory is not enough to hold the required models", __PRETTY_FUNCTION__);
+        std::cout << "GPU memory is not enough to hold the required models" << std::endl;
         return false;
     }
-    if(!models_to_fetch.empty() || !models_to_evict.empty()){
-        this->update_local_model_info(models_to_fetch, models_to_evict, new_gpu_available_memory);
+    // 3. updated this node's local_cached_model_ids and local_available_memory
+    uint64_t new_gpu_available_memory = available_memory - required_memory;
+    if(!models_to_fetch.empty() || !models_to_evict.empty() || !models_to_fetch_for_future.empty()){
+        this->local_cached_model_ids.insert(this->local_cached_model_ids.end(), models_to_fetch.begin(), models_to_fetch.end());
+        this->local_available_memory.store(new_gpu_available_memory);
         this->local_cached_models_info_updated.store(true);
     }
     return true;
@@ -3186,24 +3220,15 @@ node_id_t CascadeContext<CascadeTypes...>::next_task_scheduled_node_id(bool& sch
         dbg_default_warn("CascadeContext::next_task_scheduled_node_id task {} is not scheduled", task_name);
         return 0;
     }
-    // Only TIDE and JIT schedule dynamically
-    if(SCHEDULER_TYPE == 1 || SCHEDULER_TYPE == 2){ // experiment purposes
-        return scheduled_node_id;
-    }
     // 2. Check if the intially assigned worker is still a good choice. If not, re-schedule
     auto& task_info = prefix_to_task_info[task_name];
-    uint64_t wait_threashold = 0;
     // TIDE scheduler prioritize the original plan, only reschedule when wait_threashold exceed the limit
-    if (SCHEDULER_TYPE == 0){
-        wait_threashold = RESCHEDULE_THREASHOLD_FACTOR * task_info.expected_execution_timeus;
-    }
-    // Two cases require reschedule.
+    uint64_t wait_threashold = RESCHEDULE_THREASHOLD_FACTOR * task_info.expected_execution_timeus;
+    // Check if require reschedule.
     // case 2.1 if it is not a joint task in the dfg, and the previously scheduled_node_id has waittime longer than threashold
     bool require_reschedule_non_joint = (this->check_queue_wait_time(scheduled_node_id) > wait_threashold) & (task_info.required_objects_pathnames.size() < 2); 
-    // case 2.2 when scheduling policy request RESCHEDULE_JOINT_TASK, if it is a joint task (that is collected by receiver) 
-    bool require_reschedule_joint = ((RESCHEDULE_JOINT_TASK == 1) & (task_info.required_objects_pathnames.size() > 1) & gathered_by_receiver);
     // 3. Re-schedule the task
-    if(require_reschedule_non_joint || require_reschedule_joint){
+    if(require_reschedule_non_joint){
         node_id_t local_node_id = this->get_service_client_ref().get_my_id();
         std::vector<node_id_t> workers_set = this->get_service_client_ref().get_members();
         workers_set.erase(std::remove(workers_set.begin(), workers_set.end(), 0), workers_set.end()); // TODO: change this to config/auto condition phrase
@@ -3218,10 +3243,10 @@ node_id_t CascadeContext<CascadeTypes...>::next_task_scheduled_node_id(bool& sch
             for(auto& model_info: task_info.models_info){
                 if(!this->check_if_model_in_gpu(cur_worker, model_info.model_id)){
                     model_fetch_time += host_to_GPU_delay(model_info.model_size);
-                    // count for delay because of model eviction due to memory limit
-                    if(cur_available_memory < model_info.model_size){
-                        model_fetch_time += host_to_GPU_delay(model_info.model_size);   // use host_to_GPU_delay to estimate model eviction delay
-                    }
+                        // count for delay because of model eviction due to memory limit
+                        if(cur_available_memory < model_info.model_size){
+                            model_fetch_time += host_to_GPU_delay(model_info.model_size);   // use host_to_GPU_delay to estimate model eviction delay
+                        }
                 }
             }
             if(cur_wait_time + model_fetch_time < min_wait_time){
@@ -3292,9 +3317,9 @@ std::string CascadeContext<CascadeTypes...>::tide_scheduler(std::string entry_pr
                 if(!this->check_if_model_in_gpu(cur_worker, model_info.model_id)){
                     model_fetch_time += host_to_GPU_delay(model_info.model_size);
                     // count for delay because of model eviction due to memory limit
-                    if(c_group_available_memory[cur_worker] < model_info.model_size){
-                        model_fetch_time += host_to_GPU_delay(model_info.model_size);   // use host_to_GPU_delay to estimate model eviction delay
-                    }
+                            if(c_group_available_memory[cur_worker] < model_info.model_size){
+                            model_fetch_time += host_to_GPU_delay(model_info.model_size);   // use host_to_GPU_delay to estimate model eviction delay
+                        }
                     cur_fetching_model_size += model_info.model_size;
                 }
             }
@@ -3312,86 +3337,9 @@ std::string CascadeContext<CascadeTypes...>::tide_scheduler(std::string entry_pr
         uint64_t earliest_finish_time = earliest_start_time + GPU_to_GPU_delay(task_info.input_size) + task_info.expected_execution_timeus;
         allocated_tasks_info[task_name] = {selected_worker_id, earliest_finish_time};
         earliest_available_times[selected_worker_id] = earliest_finish_time;
-        if(fetching_model_size > 0){
-            c_group_available_memory[selected_worker_id] += fetching_model_size;
+        if(fetching_model_size > 0 && c_group_available_memory[selected_worker_id] >= fetching_model_size){
+            c_group_available_memory[selected_worker_id] -= fetching_model_size;
         }
-    }
-    std::string allocated_machines;
-    for(auto& pathname: tasks_rankings){
-        allocated_machines +=  std::to_string(allocated_tasks_info.at(pathname).first) + ",";
-    }
-    return allocated_machines;
-}
-
-template <typename... CascadeTypes>
-std::string CascadeContext<CascadeTypes...>::hash_scheduler(std::string entry_prefix, std::string entry_key){
-    std::vector<node_id_t> workers_set = this->get_service_client_ref().get_members();
-    workers_set.erase(std::remove(workers_set.begin(), workers_set.end(), 0), workers_set.end());
-    DataFlowGraph::TaskInfo& entry_task_info = this->prefix_to_task_info[entry_prefix];
-    std::vector<std::string>& tasks_rankings = entry_task_info.tasks_rankings_in_dfg;
-    std::string allocated_machines;
-    for(auto& task_name: tasks_rankings){
-        std::string key = task_name + entry_key;
-        node_id_t random_node_id = workers_set[std::hash<std::string>{}(key) % workers_set.size()];
-        allocated_machines +=  std::to_string(random_node_id) + ",";
-    }
-    return allocated_machines;
-}
-
-template <typename... CascadeTypes>
-std::string CascadeContext<CascadeTypes...>::heft_scheduler(std::string entry_prefix){
-    std::unordered_map<std::string, std::pair<node_id_t,uint64_t>> allocated_tasks_info;
-    std::vector<node_id_t> workers_set = this->get_service_client_ref().get_members();
-    workers_set.erase(std::remove(workers_set.begin(), workers_set.end(), 0), workers_set.end());
-    node_id_t local_node_id = this->get_service_client_ref().get_my_id();
-
-    auto it = this->prefix_to_task_info.find(entry_prefix);
-    if(it == this->prefix_to_task_info.end()){
-        dbg_default_error("CascadeContext::tide_scheduler task_info is empty");
-        return "";
-    }
-    DataFlowGraph::TaskInfo& entry_task_info = this->prefix_to_task_info[entry_prefix];
-
-    uint64_t cur_us = get_time_us(true);
-    std::vector<std::string>& tasks_rankings = entry_task_info.tasks_rankings_in_dfg;
-    std::unordered_map<node_id_t, uint64_t> earliest_available_times;
-    for(auto& node_id : workers_set){
-        earliest_available_times[node_id] = cur_us;
-    }
-    for(auto& task_name: tasks_rankings){
-        auto& task_info = this->prefix_to_task_info[task_name];
-        // 0. PRE-COMPUTE (used later by 2. case1) get the earliest start time, suppose all preq_tasks need to transfer data
-        node_id_t selected_worker_id = INVALID_NODE_ID;
-	    uint64_t earliest_start_time = UINT64_MAX;
-        for(const auto& cur_worker: workers_set){
-            uint64_t cur_earliest_start_time = cur_us;
-            uint64_t inputs_arrival_time = cur_us;
-            if(task_name == tasks_rankings[0] && cur_worker != local_node_id){
-                    inputs_arrival_time += CPU_to_CPU_delay(task_info.input_size);
-            }
-            for(std::string& preq_task_name: task_info.required_objects_pathnames){
-                auto& preq_task_info = this->prefix_to_task_info[preq_task_name];
-                auto& alloc_info = allocated_tasks_info[preq_task_name];
-                uint64_t arrival_time = alloc_info.second;
-                if(cur_worker != alloc_info.first){
-                    arrival_time += CPU_to_CPU_delay(preq_task_info.output_size);
-                }
-                inputs_arrival_time = std::max(inputs_arrival_time, arrival_time);
-            }
-            cur_earliest_start_time = std::max(cur_earliest_start_time, inputs_arrival_time);
-            cur_earliest_start_time = std::max(earliest_available_times[cur_worker], cur_earliest_start_time);
-            if(cur_earliest_start_time < earliest_start_time){
-                earliest_start_time = cur_earliest_start_time;
-                selected_worker_id = cur_worker;
-            }
-        }
-        if(selected_worker_id == INVALID_NODE_ID){
-            dbg_default_error("CascadeContext::tide_scheduler selected_worker_id == -1");
-            return "";
-        }
-        uint64_t earliest_finish_time = earliest_start_time + GPU_to_GPU_delay(task_info.input_size) + task_info.expected_execution_timeus;
-        allocated_tasks_info[task_name] = {selected_worker_id, earliest_finish_time};
-        earliest_available_times[selected_worker_id] = earliest_finish_time;
     }
     std::string allocated_machines;
     for(auto& pathname: tasks_rankings){

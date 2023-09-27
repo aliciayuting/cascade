@@ -176,13 +176,6 @@ class CascadeServiceCDPO : public CriticalDataPathObserver<CascadeType> {
                         ctxt->post_to_scheduler(std::move(action));
                         return;
                     }
-                    if (RESCHEDULE_JOINT_TASK == 1){
-                        if(action.required_object_pathnames.size() > 1 && value_ptr->get_num_reallocate() == 0){
-                            dbg_default_trace("In{}, post_to_scheduler to reschedule the joint task({})", __PRETTY_FUNCTION__, action.key_string);
-                            ctxt->post_to_scheduler(std::move(action));
-                            return;
-                        }
-                    }
 #ifdef HAS_STATEFUL_UDL_SUPPORT
                     ctxt->post(std::move(action), std::get<1>(handler.second), is_trigger);
 #else
