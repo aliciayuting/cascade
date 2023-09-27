@@ -1,3 +1,8 @@
+# Navigator Implementation branch
+
+- corresponding derecho is on https://github.com/aliciayuting/derecho.git at SSTnavigator branch
+- corresponding tide_deployment is on https://github.com/aliciayuting/tide_deployment.git at navigator branch
+
 # Overview
 Cascade is a C++17 cloud application framework powered by optimized RDMA data paths. It provides a K/V API for data manipulation in distributed memory and persistent storage. Besides the K/V API, Cascade allows injecting logic on the data paths for low-latency application. The highlights of Cascade's features include the following.
 
