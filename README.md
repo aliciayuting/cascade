@@ -1,3 +1,11 @@
+# Navigator Experiment branch
+
+This branch is used for Navigator comparison experiment with HEFT, Hash, and JIT algorithms. The experiment result is used in paper:  Navigator: A Decentralized Scheduler for Latency-Sensitive ML Workflows
+- The corresponding Derecho library is on https://github.com/aliciayuting/derecho.git at experiment_navigator_comparison branch.
+- The corresponding tide_deployment code is on https://github.com/aliciayuting/tide_deployment.git at experiment_navigator_comparison branch.
+- Code and experimental data could be found at https://github.com/aliciayuting/NavigatorExperiments.git main branch.
+
+
 # Overview
 Cascade is a C++17 cloud application framework powered by optimized RDMA data paths. It provides a K/V API for data manipulation in distributed memory and persistent storage. Besides the K/V API, Cascade allows injecting logic on the data paths for low-latency application. The highlights of Cascade's features include the following.
 
