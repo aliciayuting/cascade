@@ -9,12 +9,14 @@ Experimental Fractus servers setup
 
 Metadata Server:
 - node0(metadata server)      compute25
+
 Worker Servers:
 - node1(VCSS, 0)              compute32
 - node2(VCSS, 1)              compute31
 - node3(VCSS, 2)              compute30
 - node4(VCSS, 3; PCSS, 0)     compute29
 - node5(VCSS, 4; TCSS, 0)     compute28
+
 Client:
 - node6                       compute26
 
