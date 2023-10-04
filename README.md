@@ -5,6 +5,20 @@ This branch is used for Navigator comparison experiment with HEFT, Hash, and JIT
 - The corresponding tide_deployment code is on https://github.com/aliciayuting/tide_deployment.git at experiment_navigator_comparison branch.
 - Code and experimental data could be found at https://github.com/aliciayuting/NavigatorExperiments.git main branch.
 
+Experimental Fractus servers setup
+
+Metadata Server:
+- node0(metadata server)      compute25
+Worker Servers:
+- node1(VCSS, 0)              compute32
+- node2(VCSS, 1)              compute31
+- node3(VCSS, 2)              compute30
+- node4(VCSS, 3; PCSS, 0)     compute29
+- node5(VCSS, 4; TCSS, 0)     compute28
+Client:
+- node6                       compute26
+
+
 
 # Overview
 Cascade is a C++17 cloud application framework powered by optimized RDMA data paths. It provides a K/V API for data manipulation in distributed memory and persistent storage. Besides the K/V API, Cascade allows injecting logic on the data paths for low-latency application. The highlights of Cascade's features include the following.
