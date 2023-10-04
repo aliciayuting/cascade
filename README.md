@@ -1,11 +1,13 @@
 # Navigator Experiment branch
 
 This branch is used for Navigator comparison experiment with HEFT, Hash, and JIT algorithms. The experiment result is used in paper:  Navigator: A Decentralized Scheduler for Latency-Sensitive ML Workflows
+
+#### Experimental dependent code versions
 - The corresponding Derecho library is on https://github.com/aliciayuting/derecho.git at experiment_navigator_comparison branch.
 - The corresponding tide_deployment code is on https://github.com/aliciayuting/tide_deployment.git at experiment_navigator_comparison branch.
 - Code and experimental data could be found at https://github.com/aliciayuting/NavigatorExperiments.git main branch.
 
-### Experimental Fractus servers setup
+#### Experimental Fractus servers setup
 (Defined in tide_deployment cfg)
 
 Metadata Server:
