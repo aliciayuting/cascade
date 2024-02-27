@@ -264,8 +264,9 @@ class DDSSubscriberRegistry;
  * DDS Client
  */
 class DDSClient {
-private:
+public:
     ServiceClientAPI&                       capi;
+private:
     std::unique_ptr<DDSSubscriberRegistry>  subscriber_registry;
     std::unique_ptr<DDSMetadataClient>      metadata_service;
 #ifdef USE_DDS_TIMESTAMP_LOG

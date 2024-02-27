@@ -122,6 +122,8 @@ class DDSOCDPO: public OffCriticalDataPathObserver {
                 for (const auto& client_id: subscriber_registry.at(key_without_prefix)) {
                     dbg_default_trace("Forward a message of {} bytes from topic '{}' to external client {}.",
                             object->blob.size, key_without_prefix, client_id);
+                    std::cout << "Forward a message of" << object->blob.size << " bytes from topic ("<< key_without_prefix << ") to external client: node id(" 
+                        << client_id << ") sender id: " << sender <<std::endl;
                     typed_ctxt->get_service_client_ref().notify(object->blob,key_string.substr(0,prefix_length-1),client_id);
                 }
 #ifdef USE_DDS_TIMESTAMP_LOG

@@ -97,7 +97,7 @@ add_subdirectory(src/service)
 add_subdirectory(src/udl_zoo/mproc)
 add_subdirectory(src/udl_zoo/csharp)
 add_subdirectory(src/udl_zoo/python)
-add_subdirectory(src/applications/tests)
+add_subdirectory(src/applications/standalone/dds)
 
 # make libcascade.so
 add_library(cascade SHARED
