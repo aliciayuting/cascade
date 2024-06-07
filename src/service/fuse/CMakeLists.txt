@@ -90,10 +90,10 @@ if (${HAS_FUSE})
         ${CMAKE_CURRENT_BINARY_DIR}/fuse_cfg/n4/fuse_put.py
 
         COMMAND ln -sf ${CMAKE_CURRENT_BINARY_DIR}/fuse_cfg/fuse_run_single.sh.tmp
-        ${CMAKE_CURRENT_BINARY_DIR}/fuse_cfg/n4/fuse_run_single.sh.tmp
+        ${CMAKE_CURRENT_BINARY_DIR}/fuse_cfg/n4/fuse_run_single.sh
 
         COMMAND ln -sf ${CMAKE_CURRENT_BINARY_DIR}/fuse_cfg/fuse_run_multi.sh.tmp
-        ${CMAKE_CURRENT_BINARY_DIR}/fuse_cfg/n4/fuse_run_multi.sh.tmp
+        ${CMAKE_CURRENT_BINARY_DIR}/fuse_cfg/n4/fuse_run_multi.sh
 
         COMMAND ln -sf ${CMAKE_CURRENT_BINARY_DIR}/fuse_cfg/umount.sh.tmp
         ${CMAKE_CURRENT_BINARY_DIR}/fuse_cfg/n4/umount.sh
