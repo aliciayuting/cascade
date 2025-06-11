@@ -6,14 +6,18 @@ project(cascade_oob_test CXX)
 set(CMAKE_CXX_STANDARD 17)
 find_package(cascade CONFIG REQUIRED)
 
-add_library(cb_udl SHARED cb_udl.cpp)
-target_include_directories(cb_udl PRIVATE
+add_library(consumer_udl SHARED consumer_udl.cpp)
+target_include_directories(consumer_udl PRIVATE
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
+  )
+
+add_library(producer_udl SHARED producer_udl.cpp)
+target_include_directories(producer_udl PRIVATE
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
   )
 
 
-
-add_custom_command(TARGET cb_udl POST_BUILD
+add_custom_command(TARGET consumer_udl POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_CURRENT_SOURCE_DIR}/cfg
         ${CMAKE_CURRENT_BINARY_DIR}/cfg
     COMMAND ln -sf ${CMAKE_CURRENT_BINARY_DIR}/cfg/layout.json.tmp
@@ -32,7 +36,7 @@ add_custom_command(TARGET cb_udl POST_BUILD
         ${CMAKE_CURRENT_BINARY_DIR}/cfg/n2/dfgs.json
     COMMAND ln -sf ${CMAKE_CURRENT_BINARY_DIR}/cfg/dfgs.json.tmp
         ${CMAKE_CURRENT_BINARY_DIR}/cfg/n3/dfgs.json
-    COMMAND ln -sf ${CMAKE_CURRENT_BINARY_DIR}/cfg/udl_dlls.cfg
+    COMMAND ln -sf ${CMAKE_CURRENT_BINARY_DIR}/cfg/udl_dlls.cfg.tmp
         ${CMAKE_CURRENT_BINARY_DIR}/cfg/n0/udl_dlls.cfg
     COMMAND ln -sf ${CMAKE_CURRENT_BINARY_DIR}/cfg/udl_dlls.cfg.tmp
         ${CMAKE_CURRENT_BINARY_DIR}/cfg/n1/udl_dlls.cfg
@@ -55,4 +59,4 @@ add_custom_command(TARGET cb_udl POST_BUILD
     COMMENT "prepare cascade oob demo configuration"
    )
 
-target_link_libraries(cb_udl derecho::cascade)
+target_link_libraries(consumer_udl derecho::cascade)

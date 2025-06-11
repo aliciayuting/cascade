@@ -4,9 +4,15 @@
         "desc": "oob test DFG",
         "graph": [
             {
-                "pathname": "/oob",
+                "pathname": "/cb_send",
                 "shard_dispatcher_list": ["one"],
-                "user_defined_logic_list": ["48e60f7c-8500-11eb-8755-0242ac110002"],
+                "user_defined_logic_list": ["11a3c123-3300-31ac-1866-0003ac330000"],
+                "destinations": [{}]
+            },
+            {
+                "pathname": "/cb_receive",
+                "shard_dispatcher_list": ["one"],
+                "user_defined_logic_list": ["11a1c000-1100-11ac-1100-0001ac110001"],
                 "destinations": [{}]
             }
         ]
