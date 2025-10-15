@@ -3,6 +3,7 @@
 #include <cascade/cascade.hpp>
 #include <cascade/object.hpp>
 #include <cascade/service.hpp>
+#include <cascade/service_client.hpp>
 #include <cascade/service_types.hpp>
 #include <cascade/utils.hpp>
 
@@ -73,13 +74,13 @@ class CascadeServiceCDPO : public CriticalDataPathObserver<CascadeType> {
                         // dfg_ocdpos.second is a set of ocdpo info object of type prefix_ocdpo_info_t.
                         for(auto oiit = dfg_ocdpos.second.begin(); oiit != dfg_ocdpos.second.end();) {
                             if((oiit->hook != DataFlowGraph::VertexHook::BOTH) && (
-                                (oiit->hook == DataFlowGraph::VertexHook::ORDERED_PUT && is_trigger) || 
+                                (oiit->hook == DataFlowGraph::VertexHook::ORDERED_PUT && is_trigger) ||
                                 (oiit->hook == DataFlowGraph::VertexHook::TRIGGER_PUT && !is_trigger))) {
                                 // not my hook, skip it.
                                 oiit = dfg_ocdpos.second.erase(oiit);
                             } else if (is_trigger) {
                                 new_actions = true;
-                                if (oiit->execution_environment != 
+                                if (oiit->execution_environment !=
                                     DataFlowGraph::VertexExecutionEnvironment::PTHREAD) {
                                     has_mproc_udl = true;
                                 }
@@ -133,13 +134,13 @@ class CascadeServiceCDPO : public CriticalDataPathObserver<CascadeType> {
                                 value_ptr,
                                 oi.output_map  // outputs
                         );
-    
+
 #ifdef ENABLE_EVALUATION
                         ActionPostExtraInfo apei;
                         apei.uint64_val = 0;
                         apei.info.is_trigger = is_trigger;
 #endif
-    
+
 #ifdef ENABLE_EVALUATION
                         apei.info.stateful = oi.statefulness;
 #endif

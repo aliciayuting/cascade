@@ -1,6 +1,7 @@
 #pragma once
 #include "service_types.hpp"
 #include "service.hpp"
+#include "service_client.hpp"
 
 #ifdef HAS_BOOLINQ
 #include <boolinq/boolinq.h>
@@ -60,7 +61,7 @@ public:
 template <typename CascadeType, typename ServiceClientType>
 CascadeShardLinq<CascadeType,ServiceClientType> from_shard(
         std::vector<typename CascadeType::KeyType>& key_list,
-        ServiceClientType& capi, uint32_t subgroup_index, 
+        ServiceClientType& capi, uint32_t subgroup_index,
         uint32_t shard_index, persistent::version_t version) {
     /* load keys. */
     auto result = capi.template list_keys<CascadeType>(version, true, subgroup_index, shard_index);
@@ -95,7 +96,7 @@ CascadeShardLinq<CascadeType,ServiceClientType> from_shard(
  * @param capi      The cascade client.
  * @param subgroup_index
  * @param shard_index
- * @param ts_us     The unix epoch time in microsecond. 
+ * @param ts_us     The unix epoch time in microsecond.
  * @return a Linq object
  */
 template <typename CascadeType, typename ServiceClientType>
@@ -138,11 +139,11 @@ private:
 
 public:
     CascadeVersionLinq() : boolinq::Linq<persistent::version_t,typename CascadeType::ObjectType>() {};
-    
-    CascadeVersionLinq(ServiceClientType& capi, 
-        uint32_t sgidx, 
-        uint32_t shidx, 
-        const typename CascadeType::KeyType& objkey, 
+
+    CascadeVersionLinq(ServiceClientType& capi,
+        uint32_t sgidx,
+        uint32_t shidx,
+        const typename CascadeType::KeyType& objkey,
         persistent::version_t ver,
                        std::function<typename CascadeType::ObjectType(persistent::version_t&)> nextFunc) :
 
@@ -165,7 +166,7 @@ public:
  */
 template <typename CascadeType, typename ServiceClientType>
 CascadeVersionLinq<CascadeType,ServiceClientType> from_versions(
-    const typename CascadeType::KeyType& key, 
+    const typename CascadeType::KeyType& key,
  ServiceClientType &capi, uint32_t subgroup_index,
     uint32_t shard_index, persistent::version_t version) {
 
@@ -174,12 +175,12 @@ CascadeVersionLinq<CascadeType,ServiceClientType> from_versions(
    if (ver == INVALID_VERSION) {
        throw boolinq::LinqEndException();
    }
-  
+
             do {
                 auto result = capi.template get<CascadeType>(key,ver,true/*always use stable data*/,subgroup_index,shard_index);
                 for (auto& reply_future:result.get()) {
                     auto object = reply_future.second.get();
-                    ver = object.previous_version_by_key; 
+                    ver = object.previous_version_by_key;
                     if (!object.is_null())
                         return object;
                 }
@@ -210,7 +211,7 @@ public:
       persistent::version_t ver,
       std::vector<CascadeShardLinq<CascadeType,ServiceClientType>>& shard_linq_list,
       std::function<typename CascadeType::ObjectType(CascadeSubgroupLinqStorageType<CascadeType,ServiceClientType>&)> nextFunc) :
-  
+
   boolinq::Linq<CascadeSubgroupLinqStorageType<CascadeType,ServiceClientType>, typename CascadeType::ObjectType>(std::make_pair(shard_linq_list.begin(),shard_linq_list.end()), nextFunc),
   client_api(capi),
   subgroup_index(sgidx),
@@ -219,10 +220,10 @@ public:
 
 /**
  * Create a Linq iterating the objects in a subgroup.
- * @param shardidx_to_keys      The map that contains mappings between shard index and the corresponding 
- *                              key lists. The key lists are used to store the generated key_list in [from_shard] 
+ * @param shardidx_to_keys      The map that contains mappings between shard index and the corresponding
+ *                              key lists. The key lists are used to store the generated key_list in [from_shard]
  *                              function call. Please keep it alive throughout the life time of the Link object.
- * @param shard_linq_list       This is an output argument to keep the generated ShardLinq for each shard in the 
+ * @param shard_linq_list       This is an output argument to keep the generated ShardLinq for each shard in the
  *                              in the subgroup. Please keep it alive throughout the life time of the Link object.
  * @param capi                  The cascade client.
  * @param sgidx
@@ -231,10 +232,10 @@ public:
  */
 template <typename CascadeType, typename ServiceClientType>
 CascadeSubgroupLinq<CascadeType,ServiceClientType> from_subgroup(
-    std::unordered_map<uint32_t, std::vector<typename CascadeType::KeyType>>& shardidx_to_keys, 
+    std::unordered_map<uint32_t, std::vector<typename CascadeType::KeyType>>& shardidx_to_keys,
  std::vector<CascadeShardLinq<CascadeType,ServiceClientType>>& shard_linq_list,
  ServiceClientType& capi, uint32_t sgidx, persistent::version_t ver) {
- 
+
     uint32_t num_shards = capi.template get_number_of_shards<CascadeType>(sgidx);
     std::cout << "num_shards=" << num_shards << std::endl;
     for (uint32_t shidx=0;shidx<num_shards;shidx++) {
@@ -242,7 +243,7 @@ CascadeSubgroupLinq<CascadeType,ServiceClientType> from_subgroup(
         shard_linq_list.emplace_back(from_shard<CascadeType, ServiceClientType>(shardidx_to_keys[shidx],capi,sgidx,shidx,ver));
     }
     std::cout << "done prepare shard iterators." << std::endl;
- 
+
  return CascadeSubgroupLinq<CascadeType,ServiceClientType>(capi,sgidx,ver,shard_linq_list,
      [&shard_linq_list](CascadeSubgroupLinqStorageType<CascadeType,ServiceClientType>& _storage) {
             if (_storage.first == _storage.second) {
@@ -253,12 +254,12 @@ CascadeSubgroupLinq<CascadeType,ServiceClientType> from_subgroup(
           try {
            auto obj = _storage.first->next();
      return obj;
-       } 
+       }
     catch(boolinq::LinqEndException &) {
             _storage.first++;
-       } 
+       }
    } while (_storage.first != _storage.second);
-         
+
    throw boolinq::LinqEndException();
      });
 }
@@ -301,7 +302,7 @@ public:
 template <typename CascadeType, typename ServiceClientType>
 CascadeObjpoolLinq<CascadeType,ServiceClientType> from_objectpool(
         ServiceClientType& capi,
-        std::vector<typename CascadeType::KeyType>& key_list, 
+        std::vector<typename CascadeType::KeyType>& key_list,
         persistent::version_t version,
         const std::string objpool_path) {
     /* load keys. */
