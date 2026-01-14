@@ -35,9 +35,6 @@ inline uint64_t get_time_us(bool use_wall_clock = true) {
     return get_time_ns(use_wall_clock)/INT64_1E3;
 }
 
-// 1 second in nanoseconds - used for timestamp validation in put_by_time
-const uint64_t PUT_BY_TIME_DELTA_NS = 1000000000ULL;
-
 /**
  * decompose the prefix into tokens. Please note that the token after the last separator is not considered a part of
  * the prefix and hence dropped if the "prefix_only" is true

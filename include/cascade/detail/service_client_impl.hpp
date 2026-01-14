@@ -2,6 +2,7 @@
 
 #include <cascade/config.h>
 #include <cascade/utils.hpp>
+#include <derecho/conf/conf.hpp>
 #include <derecho/core/derecho.hpp>
 #include <mutex>
 #include <typeindex>
@@ -64,7 +65,8 @@ std::unique_ptr<CascadeType> client_stub_factory() {
 template <typename... CascadeTypes>
 ServiceClient<CascadeTypes...>::ServiceClient(derecho::Group<CascadeMetadataService<CascadeTypes...>, CascadeTypes...>* _group_ptr)
         : external_group_ptr(nullptr),
-          group_ptr(_group_ptr) {
+          group_ptr(_group_ptr),
+          server_clock_skew_delta_us(derecho::getConfUInt64(derecho::Conf::PERS_SERVER_CLOCK_SKEW_DELTA_US)) {
     if(group_ptr == nullptr) {
         this->external_group_ptr = std::make_unique<derecho::ExternalGroupClient<CascadeMetadataService<CascadeTypes...>, CascadeTypes...>>(
                 client_stub_factory<CascadeMetadataService<CascadeTypes...>>,
@@ -769,7 +771,7 @@ derecho::rpc::QueryResults<version_tuple> ServiceClient<CascadeTypes...>::put_by
 
     // STEP 2 - validate timestamp: reject if timestamp_us < get_walltime() - Delta
     uint64_t now_us = get_walltime() / 1000ULL;  // Convert nanoseconds to microseconds
-    uint64_t delta_us = PUT_BY_TIME_DELTA_NS / 1000ULL;  // Convert nanoseconds to microseconds
+    uint64_t delta_us = server_clock_skew_delta_us / 1000ULL;  // Convert nanoseconds to microseconds
     
     if (timestamp_us < (now_us - delta_us)) {
         dbg_default_warn("put_by_time: timestamp {}us is too old (now={}us, delta={}us), rejecting", 
@@ -798,8 +800,8 @@ derecho::rpc::QueryResults<version_tuple> ServiceClient<CascadeTypes...>::put_by
     // Validate timestamp: timestamp_us must be >= (now - delta)
     uint64_t now_ns = get_walltime();
     uint64_t timestamp_ns = timestamp_us * 1000ULL; // Convert microseconds to nanoseconds
-    uint64_t delta_ns = PUT_BY_TIME_DELTA_NS;
-    
+    uint64_t delta_ns = server_clock_skew_delta_us * 1000ULL; 
+
     if (timestamp_ns < now_ns - delta_ns) {
         // Timestamp is too old, reject the request
         throw derecho::derecho_exception("put_by_time: timestamp is too old (older than now - delta)");

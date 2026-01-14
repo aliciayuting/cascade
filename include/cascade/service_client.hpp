@@ -119,6 +119,8 @@ private:
             do_hash<std::tuple<std::type_index, uint32_t, uint32_t>>>
             member_cache;
     mutable std::shared_mutex member_cache_mutex;
+    // config clock skew delta (in microseconds) for time consistency
+    const uint64_t server_clock_skew_delta_us;
     /**
      * 'object_pool_info_cache' is a local cache for object pool metadata. This cache is used to accelerate the
      * object access process. If an object pool does not exists, it will be loaded from metadata service.
