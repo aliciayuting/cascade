@@ -147,8 +147,11 @@ int main(int argc, char** argv) {
             obj2.previous_version = persistent::INVALID_VERSION;
             obj2.previous_version_by_key = persistent::INVALID_VERSION;
 
-            uint64_t custom_timestamp_us = get_walltime() / 1000ULL;
+            // Use a timestamp that's guaranteed to be higher than the current HLC
+            // (regular_put_timestamp + 100ms to be safe)
+            uint64_t custom_timestamp_us = regular_put_timestamp + 100000ULL; // 100ms ahead of regular put
             std::cout << "  put_by_time with custom timestamp: " << custom_timestamp_us << " microseconds" << std::endl;
+            std::cout << "    (100ms ahead of regular put to ensure HLC advances)" << std::endl;
             auto result2 = capi.template put_by_time<VolatileCascadeStoreWithStringKey>(obj2, custom_timestamp_us, subgroup_index, shard_index, false);
             uint64_t custom_put_timestamp = 0;
             for (auto& reply_future : result2.get()) {
@@ -161,7 +164,7 @@ int main(int argc, char** argv) {
             if (custom_put_timestamp == custom_timestamp_us) {
                 std::cout << "  ✓ Custom timestamp was correctly used!" << std::endl;
             } else {
-                std::cout << "  ✗ Warning: Custom timestamp mismatch. Expected: " << custom_timestamp_us 
+                std::cout << "  ✗ Error: Custom timestamp mismatch. Expected: " << custom_timestamp_us 
                           << ", Got: " << custom_put_timestamp << std::endl;
             }
         }

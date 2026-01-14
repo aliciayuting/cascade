@@ -813,22 +813,22 @@ derecho::rpc::QueryResults<version_tuple> ServiceClient<CascadeTypes...>::put_by
             auto& subgroup_handle = group_ptr->template get_subgroup<SubgroupType>(subgroup_index);
             return subgroup_handle.template ordered_send_with_timestamp<RPC_NAME(ordered_put)>(timestamp_us, value, as_trigger);
         } else {
-            // p2p put - timestamp not supported for p2p, fall back to regular put
+            // p2p put_with_timestamp - send to a shard member who will do ordered_send_with_timestamp
             node_id_t node_id = pick_member_by_policy<SubgroupType>(subgroup_index,shard_index,value.get_key_ref());
             try {
                 auto& subgroup_handle = group_ptr->template get_subgroup<SubgroupType>(subgroup_index);
-                return subgroup_handle.template p2p_send<RPC_NAME(put)>(node_id,value,as_trigger);
+                return subgroup_handle.template p2p_send<RPC_NAME(put_with_timestamp)>(node_id,value,timestamp_us,as_trigger);
             } catch (derecho::invalid_subgroup_exception& ex) {
                 auto& subgroup_handle = group_ptr->template get_nonmember_subgroup<SubgroupType>(subgroup_index);
-                return subgroup_handle.template p2p_send<RPC_NAME(put)>(node_id,value,as_trigger);
+                return subgroup_handle.template p2p_send<RPC_NAME(put_with_timestamp)>(node_id,value,timestamp_us,as_trigger);
             }
         }
     } else {
-        // External client - timestamp not supported, fall back to regular put
+        // External client - use put_with_timestamp P2P call
         std::lock_guard<std::mutex> lck(this->external_group_ptr_mutex);
         auto& caller = external_group_ptr->template get_subgroup_caller<SubgroupType>(subgroup_index);
         node_id_t node_id = pick_member_by_policy<SubgroupType>(subgroup_index,shard_index,value.get_key_ref());
-        return caller.template p2p_send<RPC_NAME(put)>(node_id,value,as_trigger);
+        return caller.template p2p_send<RPC_NAME(put_with_timestamp)>(node_id,value,timestamp_us,as_trigger);
     }
 }
 

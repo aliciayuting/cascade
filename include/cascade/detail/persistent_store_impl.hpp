@@ -43,6 +43,24 @@ version_tuple PersistentCascadeStore<KT, VT, IK, IV, ST>::put(const VT& value, b
 }
 
 template <typename KT, typename VT, KT* IK, VT* IV, persistent::StorageType ST>
+version_tuple PersistentCascadeStore<KT, VT, IK, IV, ST>::put_with_timestamp(const VT& value, uint64_t timestamp_us, bool as_trigger) const {
+    debug_enter_func_with_args("value.get_key_ref()={}, timestamp_us={}", value.get_key_ref(), timestamp_us);
+    LOG_TIMESTAMP_BY_TAG(TLT_PERSISTENT_PUT_START, group, value);
+
+    derecho::Replicated<PersistentCascadeStore>& subgroup_handle = group->template get_subgroup<PersistentCascadeStore>(this->subgroup_index);
+    auto results = subgroup_handle.template ordered_send_with_timestamp<RPC_NAME(ordered_put)>(timestamp_us, value, as_trigger);
+    auto& replies = results.get();
+    version_tuple ret{CURRENT_VERSION, 0};
+    for(auto& reply_pair : replies) {
+        ret = reply_pair.second.get();
+    }
+
+    LOG_TIMESTAMP_BY_TAG(TLT_PERSISTENT_PUT_END, group, value);
+    debug_leave_func_with_value("version=0x{:x},timestamp={}us", std::get<0>(ret), std::get<1>(ret));
+    return ret;
+}
+
+template <typename KT, typename VT, KT* IK, VT* IV, persistent::StorageType ST>
 void PersistentCascadeStore<KT, VT, IK, IV, ST>::put_and_forget(const VT& value, bool as_trigger) const {
     debug_enter_func_with_args("value.get_key_ref()={}", value.get_key_ref());
     LOG_TIMESTAMP_BY_TAG(TLT_PERSISTENT_PUT_AND_FORGET_START, group, value);
