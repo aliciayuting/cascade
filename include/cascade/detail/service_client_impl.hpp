@@ -766,7 +766,7 @@ derecho::rpc::QueryResults<version_tuple> ServiceClient<CascadeTypes...>::put_by
         const ObjectType& value, const uint64_t& timestamp_us, bool as_trigger) {
     // STEP 1 - get key
     if constexpr (!std::is_base_of_v<ICascadeObject<std::string,ObjectType>,ObjectType>) {
-        throw derecho::derecho_exception(std::string("ServiceClient<>::put_by_time() only support object of type ICascadeObject<std::string,ObjectType>,but we get ") + typeid(ObjectType).name());
+        throw derecho::derecho_exception(std::string("ServiceClient<>::put_by_time() only support object of type ICascadeObject<std::string,ObjectType>,but we got ") + typeid(ObjectType).name());
     }
 
     // STEP 2 - validate timestamp: reject if timestamp_us < get_walltime() - Delta
