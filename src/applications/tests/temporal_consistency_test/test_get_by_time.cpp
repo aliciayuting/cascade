@@ -61,7 +61,6 @@ int main(int argc, char** argv) {
 
             // Use current time for each put
             uint64_t timestamp_us = get_walltime() / 1000ULL;
-            std::cout << "  Putting key: " << obj.key << " at timestamp: " << timestamp_us << std::endl;
             
             auto result = capi.template put_by_time<PersistentCascadeStoreWithStringKey>(
                 obj, timestamp_us, subgroup_index, shard_index, false);
@@ -71,6 +70,7 @@ int main(int argc, char** argv) {
                 auto reply = reply_future.second.get();
                 uint64_t actual_timestamp = std::get<1>(reply);
                 test_data.push_back({obj.key, actual_timestamp});
+                std::cout << "  Put key: " << obj.key << " at timestamp: " << timestamp_us << std::endl;
                 std::cout << "    ✓ Put successful. Version: " << std::get<0>(reply) 
                           << ", Timestamp: " << actual_timestamp << std::endl;
             }

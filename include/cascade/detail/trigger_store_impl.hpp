@@ -25,8 +25,7 @@ version_tuple TriggerCascadeNoStore<KT, VT, IK, IV>::put(const VT& value, bool a
 
 template <typename KT, typename VT, KT* IK, VT* IV>
 version_tuple TriggerCascadeNoStore<KT, VT, IK, IV>::put_with_timestamp(const VT& value, uint64_t timestamp_us, bool as_trigger) const {
-    // TriggerCascadeNoStore doesn't support timestamps, fall back to put_and_forget
-    put_and_forget(value, as_trigger);
+    dbg_default_warn("Calling unsupported func:{}", __PRETTY_FUNCTION__);
     return {persistent::INVALID_VERSION, 0};
 }
 

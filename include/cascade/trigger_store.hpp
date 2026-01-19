@@ -82,7 +82,6 @@ public:
 #endif  // ENABLE_EVALUATION
     virtual void trigger_put(const VT& value) const override;
     virtual version_tuple put(const VT& value, bool as_trigger) const override;
-    // Fall back to put_and_forget since TriggerCascadeNoStore doesn't support timestamps
     virtual version_tuple put_with_timestamp(const VT& value, uint64_t timestamp_us, bool as_trigger) const;
     virtual void put_and_forget(const VT& value, bool as_trigger) const override;
 #ifdef ENABLE_EVALUATION

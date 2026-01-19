@@ -42,8 +42,6 @@ int main(int argc, char** argv) {
 
             // Get current time in microseconds
             uint64_t current_time_us = get_walltime() / 1000ULL;
-            std::cout << "  Current time: " << current_time_us << " microseconds" << std::endl;
-            std::cout << "  Calling put_by_time..." << std::endl;
 
             auto result = capi.template put_by_time<VolatileCascadeStoreWithStringKey>(obj, current_time_us, subgroup_index, shard_index, false);
             
@@ -53,6 +51,7 @@ int main(int argc, char** argv) {
                 std::cout << "  ✓ Success! Version: " << std::get<0>(reply) 
                           << ", Timestamp: " << std::get<1>(reply) << " microseconds" << std::endl;
             }
+            std::cout << "  Testing Current time: " << current_time_us << " microseconds" << std::endl;
         }
         std::cout << std::endl;
 
@@ -66,12 +65,9 @@ int main(int argc, char** argv) {
             obj.previous_version_by_key = persistent::INVALID_VERSION;
 
             // Use a timestamp 500ms in the future (within 1 second delta)
+            // Calculate and call immediately to avoid terminal output delays consuming the margin
             uint64_t current_time_us = get_walltime() / 1000ULL;
             uint64_t future_time_us = current_time_us + 500000ULL; // 500ms = 500000 microseconds
-            std::cout << "  Current time: " << current_time_us << " microseconds" << std::endl;
-            std::cout << "  Future time: " << future_time_us << " microseconds" << std::endl;
-            std::cout << "  Calling put_by_time..." << std::endl;
-
             auto result = capi.template put_by_time<VolatileCascadeStoreWithStringKey>(obj, future_time_us, subgroup_index, shard_index, false);
             
             // Wait for result
@@ -80,6 +76,10 @@ int main(int argc, char** argv) {
                 std::cout << "  ✓ Success! Version: " << std::get<0>(reply) 
                           << ", Timestamp: " << std::get<1>(reply) << " microseconds" << std::endl;
             }
+
+            // Print diagnostic info after the call
+            std::cout << "  Testing Current time (at call): " << current_time_us << " microseconds" << std::endl;
+            std::cout << "  Testing Future time: " << future_time_us << " microseconds" << std::endl;
         }
         std::cout << std::endl;
 
@@ -95,10 +95,6 @@ int main(int argc, char** argv) {
             // Use a timestamp 2 seconds in the past (older than 1 second delta)
             uint64_t current_time_us = get_walltime() / 1000ULL;
             uint64_t old_time_us = current_time_us - 2000000ULL; // 2 seconds = 2000000 microseconds
-            std::cout << "  Current time: " << current_time_us << " microseconds" << std::endl;
-            std::cout << "  Old time: " << old_time_us << " microseconds" << std::endl;
-            std::cout << "  Calling put_by_time (should be rejected)..." << std::endl;
-
             try {
                 auto result = capi.template put_by_time<VolatileCascadeStoreWithStringKey>(obj, old_time_us, subgroup_index, shard_index, false);
                 // If we get here, the call didn't throw - check if result is empty
@@ -115,6 +111,8 @@ int main(int argc, char** argv) {
             } catch (const derecho::derecho_exception& e) {
                 std::cout << "  ✓ Correctly rejected with exception: " << e.what() << std::endl;
             }
+            std::cout << "  Testing Current time: " << current_time_us << " microseconds" << std::endl;
+            std::cout << "  Old time: " << old_time_us << " microseconds" << std::endl;
         }
         std::cout << std::endl;
 
@@ -150,8 +148,6 @@ int main(int argc, char** argv) {
             // Use a timestamp that's guaranteed to be higher than the current HLC
             // (regular_put_timestamp + 100ms to be safe)
             uint64_t custom_timestamp_us = regular_put_timestamp + 100000ULL; // 100ms ahead of regular put
-            std::cout << "  put_by_time with custom timestamp: " << custom_timestamp_us << " microseconds" << std::endl;
-            std::cout << "    (100ms ahead of regular put to ensure HLC advances)" << std::endl;
             auto result2 = capi.template put_by_time<VolatileCascadeStoreWithStringKey>(obj2, custom_timestamp_us, subgroup_index, shard_index, false);
             uint64_t custom_put_timestamp = 0;
             for (auto& reply_future : result2.get()) {
@@ -167,6 +163,8 @@ int main(int argc, char** argv) {
                 std::cout << "  ✗ Error: Custom timestamp mismatch. Expected: " << custom_timestamp_us 
                           << ", Got: " << custom_put_timestamp << std::endl;
             }
+            std::cout << "  Testing put_by_time with custom timestamp: " << custom_timestamp_us << " microseconds" << std::endl;
+            std::cout << "    (100ms ahead of regular put to ensure HLC advances)" << std::endl;
         }
         std::cout << std::endl;
 
@@ -181,9 +179,6 @@ int main(int argc, char** argv) {
 
             // Use a specific timestamp (e.g., 1000000000 microseconds = 1000 seconds)
             uint64_t specific_timestamp_us = 1000000000ULL;
-            std::cout << "  Using specific timestamp: " << specific_timestamp_us << " microseconds" << std::endl;
-            std::cout << "  Note: This will be rejected if it's too old" << std::endl;
-
             try {
                 auto result = capi.template put_by_time<VolatileCascadeStoreWithStringKey>(obj, specific_timestamp_us, subgroup_index, shard_index, false);
                 bool has_results = false;
@@ -199,6 +194,8 @@ int main(int argc, char** argv) {
             } catch (const derecho::derecho_exception& e) {
                 std::cout << "  Timestamp was rejected with exception: " << e.what() << std::endl;
             }
+            std::cout << "  Using specific timestamp: " << specific_timestamp_us << " microseconds" << std::endl;
+            std::cout << "  Note: This will be rejected if it's too old" << std::endl;
         }
         std::cout << std::endl;
 
