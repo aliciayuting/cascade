@@ -109,7 +109,7 @@ int main(int argc, char** argv) {
             uint64_t current_time_us = get_walltime() / 1000ULL;
 
             try {
-                auto result = capi.template put_by_time<VolatileCascadeStoreWithStringKey>(
+                auto result = capi.template put_by_time<PersistentCascadeStoreWithStringKey>(
                     obj, current_time_us, subgroup_index, shard_index, false);
 
                 // Wait for result
@@ -163,6 +163,43 @@ int main(int argc, char** argv) {
                                      / (actual_duration_ms / 1000.0) / 1000000.0;
             std::cout << "Throughput: " << throughput_mbps << " Mbps" << std::endl;
         }
+
+        // Flush logs on all shards in subgroup 0 of PersistentCascadeStoreWithStringKey
+        std::cout << std::endl;
+        std::cout << "=== Flushing logs on all shards ===" << std::endl;
+        {
+            auto shards = capi.get_subgroup_members<PersistentCascadeStoreWithStringKey>(subgroup_index);
+            std::cout << "  Sending flush_log to " << shards.size() << " shards in subgroup " << subgroup_index << " ..." << std::endl;
+            
+            ObjectWithStringKey flush_obj;
+            std::string flush_value = "flush";
+            flush_obj.blob = Blob(reinterpret_cast<const uint8_t*>(flush_value.c_str()), flush_value.size());
+            flush_obj.previous_version = persistent::INVALID_VERSION;
+            flush_obj.previous_version_by_key = persistent::INVALID_VERSION;
+            
+            uint32_t shard_id = 0;
+            for (auto& shard : shards) {
+                flush_obj.key = "/flush_log/" + std::to_string(shard_id);
+                std::cout << "    Sending flush to shard " << shard_id << " with key: " << flush_obj.key << std::endl;
+                
+                // Send put to each node in the shard to ensure all replicas receive it
+                for (size_t j = 0; j < shard.size(); j++) {
+                    // Each iteration reaches a different node in the shard due to round robin policy
+                    auto res = capi.template put<PersistentCascadeStoreWithStringKey>(flush_obj, subgroup_index, shard_id, true);
+                    for (auto& reply_future : res.get()) {
+                        reply_future.second.get(); // Wait for the put to complete
+                    }
+                }
+                std::cout << "    ✓ Flush sent to shard " << shard_id << std::endl;
+                shard_id++;
+            }
+            std::cout << "  ✓ All shards flushed" << std::endl;
+        }
+        std::cout << std::endl;
+
+        // Flush client log
+        TimestampLogger::flush("client.dat");
+        std::cout << "[flush log]: I have flushed the log name client.dat" << std::endl;
 
         return 0;
 
