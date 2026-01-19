@@ -298,6 +298,45 @@ int main(int argc, char** argv) {
         std::cout << std::endl;
 
         std::cout << "=== All tests completed ===" << std::endl;
+
+        // send flush commands to all nodes
+        // Flush logs on all shards in subgroup 0 of PCSS
+        std::cout << "=== Flushing logs on all shards ===" << std::endl;
+        {
+            auto shards = capi.get_subgroup_members<PersistentCascadeStoreWithStringKey>(subgroup_index);
+            std::cout << "  Sending flush_log to " << shards.size() << " shards in subgroup " << subgroup_index << " ..." << std::endl;
+            
+            ObjectWithStringKey flush_obj;
+            std::string flush_value = "flush";
+            flush_obj.blob = Blob(reinterpret_cast<const uint8_t*>(flush_value.c_str()), flush_value.size());
+            flush_obj.previous_version = persistent::INVALID_VERSION;
+            flush_obj.previous_version_by_key = persistent::INVALID_VERSION;
+            
+            uint32_t shard_id = 0;
+            for (auto& shard : shards) {
+                flush_obj.key = "/flush_log/" + std::to_string(shard_id);
+                std::cout << "    Sending flush to shard " << shard_id << " with key: " << flush_obj.key << std::endl;
+                
+                // Send put to each node in the shard to ensure all replicas receive it
+                for (size_t j = 0; j < shard.size(); j++) {
+                    // Each iteration reaches a different node in the shard due to round robin policy
+                    auto res = capi.template put<PersistentCascadeStoreWithStringKey>(flush_obj, subgroup_index, shard_id, true);
+                    for (auto& reply_future : res.get()) {
+                        reply_future.second.get(); // Wait for the put to complete
+                    }
+                }
+                std::cout << "    ✓ Flush sent to shard " << shard_id << std::endl;
+                shard_id++;
+            }
+            std::cout << "  ✓ All shards flushed" << std::endl;
+        }
+        std::cout << std::endl;
+
+        // flush log
+        TimestampLogger::flush("client.dat");
+        std::cout << "[flush log]: I have flushed the log name" << "client.dat";
+
+
         return 0;
 
     } catch (const std::exception& e) {

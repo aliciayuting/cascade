@@ -1,3 +1,11 @@
+add_library(flush_log_udl SHARED flush_log_udl.cpp)
+target_include_directories(flush_log_udl PRIVATE
+    $<BUILD_INTERFACE:${CMAKE_BINARY_DIR}/include>
+    $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/include>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
+    $<BUILD_INTERFACE:${CMAKE_BINARY_DIR}>
+)
+
 # Test for get_by_time API
 add_executable(test_get_by_time test_get_by_time.cpp)
 target_include_directories(test_get_by_time PRIVATE
@@ -7,6 +15,7 @@ target_include_directories(test_get_by_time PRIVATE
     $<BUILD_INTERFACE:${CMAKE_BINARY_DIR}>
 )
 target_link_libraries(test_get_by_time cascade pthread)
+
 
 # Test for put_by_time API
 add_executable(test_put_by_time test_put_by_time.cpp)
