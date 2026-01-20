@@ -120,6 +120,7 @@ int main(int argc, char** argv) {
 
                 if (use_put_by_time) {
                     // Get current time in microseconds for put_by_time
+                    TimestampLogger::log(1006, this->get_my_id(), put_count);
                     uint64_t current_time_us = get_walltime() / 1000ULL;
 
                     auto result = capi.template put_by_time<PersistentCascadeStoreWithStringKey>(
