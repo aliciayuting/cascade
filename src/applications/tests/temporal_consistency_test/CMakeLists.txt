@@ -70,6 +70,14 @@ add_custom_command(TARGET test_put_by_time POST_BUILD
         ${CMAKE_CURRENT_BINARY_DIR}/consistency_test_cfg/n2/udl_dlls.cfg
     COMMAND ln -sf ${CMAKE_CURRENT_BINARY_DIR}/consistency_test_cfg/udl_dlls.cfg.tmp
         ${CMAKE_CURRENT_BINARY_DIR}/consistency_test_cfg/n3/udl_dlls.cfg
+    COMMAND ln -sf ${CMAKE_CURRENT_BINARY_DIR}/consistency_test_cfg/clean.sh
+        ${CMAKE_CURRENT_BINARY_DIR}/consistency_test_cfg/n0/clean.sh
+    COMMAND ln -sf ${CMAKE_CURRENT_BINARY_DIR}/consistency_test_cfg/clean.sh
+        ${CMAKE_CURRENT_BINARY_DIR}/consistency_test_cfg/n1/clean.sh
+    COMMAND ln -sf ${CMAKE_CURRENT_BINARY_DIR}/consistency_test_cfg/clean.sh
+        ${CMAKE_CURRENT_BINARY_DIR}/consistency_test_cfg/n2/clean.sh
+    COMMAND ln -sf ${CMAKE_CURRENT_BINARY_DIR}/consistency_test_cfg/clean.sh
+        ${CMAKE_CURRENT_BINARY_DIR}/consistency_test_cfg/n3/clean.sh
     DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/consistency_test_cfg/layout.json.tmp
             ${CMAKE_CURRENT_SOURCE_DIR}/consistency_test_cfg/dfgs.json.tmp
             ${CMAKE_CURRENT_SOURCE_DIR}/consistency_test_cfg/udl_dlls.cfg.tmp
