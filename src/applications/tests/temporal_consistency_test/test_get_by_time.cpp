@@ -58,6 +58,8 @@ int main(int argc, char** argv) {
                            ("test_value_" + std::to_string(i)).length());
             obj.previous_version = persistent::INVALID_VERSION;
             obj.previous_version_by_key = persistent::INVALID_VERSION;
+            obj.set_message_id(i);
+
 
             // Use current time for each put
             uint64_t timestamp_us = get_walltime() / 1000ULL;
