@@ -10,6 +10,7 @@
 #include <vector>
 #include <cstring>
 #include <cstdlib>
+#include <algorithm>
 
 using namespace derecho::cascade;
 
@@ -191,6 +192,113 @@ int main(int argc, char** argv) {
             double throughput_mbps = (static_cast<double>(success_count) * CHUNK_SIZE * 8.0) 
                                      / (actual_duration_ms / 1000.0) / 1000000.0;
             std::cout << "Throughput: " << throughput_mbps << " Mbps" << std::endl;
+        }
+
+        // ========== GET LATENCY TEST ==========
+        std::cout << std::endl;
+        std::cout << "=== Get Latency Test ===" << std::endl;
+        std::cout << "Sleeping for 5 seconds before starting get test..." << std::endl;
+        std::this_thread::sleep_for(std::chrono::seconds(5));
+
+        // Test get latency for all keys that were put
+        std::vector<double> get_latencies_us;
+        uint64_t get_success_count = 0;
+        uint64_t get_failure_count = 0;
+
+        std::cout << "Testing " << (use_put_by_time ? "get_by_time" : "regular get") 
+                  << " latency for " << put_count << " keys..." << std::endl;
+
+        for (uint64_t i = 0; i < put_count; i++) {
+            std::string key = "bigdelta_key_" + std::to_string(i);
+            
+            try {
+                // Record start time
+                auto get_start = std::chrono::high_resolution_clock::now();
+
+                if (use_put_by_time) {
+                    // Use get_by_time with current time minus a small delta to ensure data is stable
+                    uint64_t query_time_us = get_walltime() / 1000ULL - 1000000ULL; // 1 second ago
+                    
+                    auto result = capi.template get_by_time<PersistentCascadeStoreWithStringKey>(
+                        key, query_time_us, true, subgroup_index, shard_index);
+                    
+                    // Wait for result
+                    for (auto& reply_future : result.get()) {
+                        auto obj = reply_future.second.get();
+                        if (!obj.is_null()) {
+                            get_success_count++;
+                        } else {
+                            get_failure_count++;
+                        }
+                    }
+                } else {
+                    // Use regular get with CURRENT_VERSION
+                    auto result = capi.template get<PersistentCascadeStoreWithStringKey>(
+                        key, persistent::CURRENT_VERSION, true, subgroup_index, shard_index);
+                    
+                    // Wait for result
+                    for (auto& reply_future : result.get()) {
+                        auto obj = reply_future.second.get();
+                        if (!obj.is_null()) {
+                            get_success_count++;
+                        } else {
+                            get_failure_count++;
+                        }
+                    }
+                }
+
+                // Record end time and calculate latency
+                auto get_end = std::chrono::high_resolution_clock::now();
+                double latency_us = std::chrono::duration_cast<std::chrono::microseconds>(
+                    get_end - get_start).count();
+                get_latencies_us.push_back(latency_us);
+
+                if (i % 100 == 0) {
+                    std::cout << "  Get " << i << ": latency " << latency_us << " us" << std::endl;
+                }
+            } catch (const std::exception& e) {
+                get_failure_count++;
+                std::cerr << "  Get " << i << ": Exception - " << e.what() << std::endl;
+            }
+        }
+
+        // Calculate and print get latency statistics
+        std::cout << std::endl;
+        std::cout << "=== Get Latency Results ===" << std::endl;
+        std::cout << "Get mode: " << (use_put_by_time ? "get_by_time" : "regular get") << std::endl;
+        std::cout << "Total gets: " << put_count << std::endl;
+        std::cout << "Successful gets: " << get_success_count << std::endl;
+        std::cout << "Failed gets: " << get_failure_count << std::endl;
+
+        if (!get_latencies_us.empty()) {
+            // Calculate min, max, average, and sort for percentiles
+            double min_latency = get_latencies_us[0];
+            double max_latency = get_latencies_us[0];
+            double sum_latency = 0;
+            
+            for (double lat : get_latencies_us) {
+                if (lat < min_latency) min_latency = lat;
+                if (lat > max_latency) max_latency = lat;
+                sum_latency += lat;
+            }
+            double avg_latency = sum_latency / get_latencies_us.size();
+
+            // Sort for percentiles
+            std::vector<double> sorted_latencies = get_latencies_us;
+            std::sort(sorted_latencies.begin(), sorted_latencies.end());
+            
+            size_t n = sorted_latencies.size();
+            double p50 = sorted_latencies[n / 2];
+            double p90 = sorted_latencies[(size_t)(n * 0.9)];
+            double p99 = sorted_latencies[(size_t)(n * 0.99)];
+
+            std::cout << std::fixed << std::setprecision(2);
+            std::cout << "Min latency: " << min_latency << " us" << std::endl;
+            std::cout << "Max latency: " << max_latency << " us" << std::endl;
+            std::cout << "Avg latency: " << avg_latency << " us" << std::endl;
+            std::cout << "P50 latency: " << p50 << " us" << std::endl;
+            std::cout << "P90 latency: " << p90 << " us" << std::endl;
+            std::cout << "P99 latency: " << p99 << " us" << std::endl;
         }
 
         // Flush logs on all shards in subgroup 0 of PersistentCascadeStoreWithStringKey
