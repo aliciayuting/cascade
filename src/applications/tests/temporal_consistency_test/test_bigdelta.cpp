@@ -177,7 +177,7 @@ int main(int argc, char** argv) {
             flush_obj.blob = Blob(reinterpret_cast<const uint8_t*>(flush_value.c_str()), flush_value.size());
             flush_obj.previous_version = persistent::INVALID_VERSION;
             flush_obj.previous_version_by_key = persistent::INVALID_VERSION;
-            
+            flush_obj.set_message_id(10000001);
             uint32_t shard_id = 0;
             for (auto& shard : shards) {
                 flush_obj.key = "/flush_log/" + std::to_string(shard_id);
