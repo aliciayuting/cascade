@@ -234,7 +234,7 @@ int main(int argc, char** argv) {
                 } else {
                     // Use regular get with CURRENT_VERSION
                     auto result = capi.template get<PersistentCascadeStoreWithStringKey>(
-                        key, persistent::CURRENT_VERSION, true, subgroup_index, shard_index);
+                        key, CURRENT_VERSION, true, subgroup_index, shard_index);
                     
                     // Wait for result
                     for (auto& reply_future : result.get()) {
@@ -315,7 +315,7 @@ int main(int argc, char** argv) {
             flush_obj.previous_version_by_key = persistent::INVALID_VERSION;
             flush_obj.set_message_id(10000001);
             uint32_t shard_id = 0;
-            for (auto& shard : shards) {
+            for ([[maybe_unused]] auto& shard : shards) {
                 flush_obj.key = "/flush_log/" + std::to_string(shard_id);
                 std::cout << "    Sending flush to shard " << shard_id << " with key: " << flush_obj.key << std::endl;
                 
