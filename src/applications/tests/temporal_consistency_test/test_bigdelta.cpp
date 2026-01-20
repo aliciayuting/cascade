@@ -21,23 +21,31 @@ constexpr size_t CHUNK_SIZE = 30 * 1024;
  * 
  * This program puts 30KB chunks of data at a configurable rate.
  * 
- * Usage: test_bigdelta <puts_per_second> <duration_seconds>
+ * Usage: test_bigdelta <puts_per_second> <duration_seconds> [use_put_by_time]
  * 
  * Arguments:
  *   puts_per_second  - How many puts per second (can be float or int, e.g., 10 or 0.5)
  *   duration_seconds - How long to run the test in seconds (can be float or int)
+ *   use_put_by_time  - Optional: 1 for put_by_time (default), 0 for normal put
  */
 int main(int argc, char** argv) {
-    if (argc != 3) {
-        std::cerr << "Usage: " << argv[0] << " <puts_per_second> <duration_seconds>" << std::endl;
+    if (argc < 3 || argc > 4) {
+        std::cerr << "Usage: " << argv[0] << " <puts_per_second> <duration_seconds> [use_put_by_time]" << std::endl;
         std::cerr << "  puts_per_second  - How many puts per second (can be float, e.g., 10 or 0.5)" << std::endl;
         std::cerr << "  duration_seconds - How long to run in seconds (can be float, e.g., 5 or 2.5)" << std::endl;
+        std::cerr << "  use_put_by_time  - Optional: 1 for put_by_time (default), 0 for normal put" << std::endl;
         return 1;
     }
 
     // Parse arguments as doubles to support both int and float inputs
     double puts_per_second = std::stod(argv[1]);
     double duration_seconds = std::stod(argv[2]);
+    
+    // Parse optional use_put_by_time argument (default: true)
+    bool use_put_by_time = true;
+    if (argc == 4) {
+        use_put_by_time = (std::atoi(argv[3]) != 0);
+    }
 
     if (puts_per_second <= 0) {
         std::cerr << "Error: puts_per_second must be positive" << std::endl;
@@ -58,6 +66,7 @@ int main(int argc, char** argv) {
     std::cout << "Puts per second: " << puts_per_second << std::endl;
     std::cout << "Duration: " << duration_seconds << " seconds" << std::endl;
     std::cout << "Interval between puts: " << interval_us << " microseconds" << std::endl;
+    std::cout << "Put mode: " << (use_put_by_time ? "put_by_time" : "normal put") << std::endl;
     std::cout << std::endl;
 
     try {
@@ -106,25 +115,41 @@ int main(int argc, char** argv) {
             obj.previous_version_by_key = persistent::INVALID_VERSION;
             obj.set_message_id(put_count);
 
-            // Get current time in microseconds for put_by_time
-            TimestampLogger::log(1006, this->get_my_id(), put_count);
-            uint64_t current_time_us = get_walltime() / 1000ULL;
-
             try {
-
-                auto result = capi.template put_by_time<PersistentCascadeStoreWithStringKey>(
-                    obj, current_time_us, subgroup_index, shard_index, false);
-
-                // Wait for result
                 bool got_result = false;
-                for (auto& reply_future : result.get()) {
-                    auto reply = reply_future.second.get();
-                    got_result = true;
-                    if (put_count % 100 == 0) {
-                        std::cout << "  Put " << put_count << ": Version " << std::get<0>(reply)
-                                  << ", Timestamp " << std::get<1>(reply) << " us" << std::endl;
+
+                if (use_put_by_time) {
+                    // Get current time in microseconds for put_by_time
+                    uint64_t current_time_us = get_walltime() / 1000ULL;
+
+                    auto result = capi.template put_by_time<PersistentCascadeStoreWithStringKey>(
+                        obj, current_time_us, subgroup_index, shard_index, false);
+
+                    // Wait for result
+                    for (auto& reply_future : result.get()) {
+                        auto reply = reply_future.second.get();
+                        got_result = true;
+                        if (put_count % 100 == 0) {
+                            std::cout << "  Put " << put_count << ": Version " << std::get<0>(reply)
+                                      << ", Timestamp " << std::get<1>(reply) << " us" << std::endl;
+                        }
+                    }
+                } else {
+                    // Normal put
+                    auto result = capi.template put<PersistentCascadeStoreWithStringKey>(
+                        obj, subgroup_index, shard_index, false);
+
+                    // Wait for result
+                    for (auto& reply_future : result.get()) {
+                        auto reply = reply_future.second.get();
+                        got_result = true;
+                        if (put_count % 100 == 0) {
+                            std::cout << "  Put " << put_count << ": Version " << std::get<0>(reply)
+                                      << ", Timestamp " << std::get<1>(reply) << " us" << std::endl;
+                        }
                     }
                 }
+
                 if (got_result) {
                     success_count++;
                 } else {
