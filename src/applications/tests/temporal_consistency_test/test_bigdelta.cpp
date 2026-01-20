@@ -104,6 +104,7 @@ int main(int argc, char** argv) {
             obj.blob = Blob(data_buffer.data(), CHUNK_SIZE);
             obj.previous_version = persistent::INVALID_VERSION;
             obj.previous_version_by_key = persistent::INVALID_VERSION;
+            obj.set_message_id(put_count);
 
             // Get current time in microseconds for put_by_time
             uint64_t current_time_us = get_walltime() / 1000ULL;
