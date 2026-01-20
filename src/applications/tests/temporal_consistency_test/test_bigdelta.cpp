@@ -15,25 +15,24 @@
 
 using namespace derecho::cascade;
 
-// 30KB chunk size
-constexpr size_t CHUNK_SIZE = 30 * 1024;
-
 /**
  * Test client for big delta puts
  * 
- * This program puts 30KB chunks of data at a configurable rate.
+ * This program puts chunks of data at a configurable rate.
  * 
- * Usage: test_bigdelta <puts_per_second> <duration_seconds> <put_type> <mode>
+ * Usage: test_bigdelta <message_size> <puts_per_second> <duration_seconds> <put_type> <mode>
  * 
  * Arguments:
+ *   message_size     - Size of each message in bytes (e.g., 30720 for 30KB)
  *   puts_per_second  - How many puts per second (can be float or int, e.g., 10 or 0.5)
  *   duration_seconds - How long to run the test in seconds (can be float or int)
  *   put_type         - "put_with_time" or "put" (determines put and get methods)
  *   mode             - "normal" (put+get), "get" (get only), or "put_pause" (pause 30s halfway through puts)
  */
 int main(int argc, char** argv) {
-    if (argc != 5) {
-        std::cerr << "Usage: " << argv[0] << " <puts_per_second> <duration_seconds> <put_type> <mode>" << std::endl;
+    if (argc != 6) {
+        std::cerr << "Usage: " << argv[0] << " <message_size> <puts_per_second> <duration_seconds> <put_type> <mode>" << std::endl;
+        std::cerr << "  message_size     - Size of each message in bytes (e.g., 30720 for 30KB)" << std::endl;
         std::cerr << "  puts_per_second  - How many puts per second (can be float, e.g., 10 or 0.5)" << std::endl;
         std::cerr << "  duration_seconds - How long to run in seconds (can be float, e.g., 5 or 2.5)" << std::endl;
         std::cerr << "  put_type         - \"put_with_time\" or \"put\"" << std::endl;
@@ -41,12 +40,19 @@ int main(int argc, char** argv) {
         return 1;
     }
 
+    // Parse message size
+    size_t chunk_size = std::stoul(argv[1]);
+    if (chunk_size == 0) {
+        std::cerr << "Error: message_size must be positive" << std::endl;
+        return 1;
+    }
+
     // Parse arguments as doubles to support both int and float inputs
-    double puts_per_second = std::stod(argv[1]);
-    double duration_seconds = std::stod(argv[2]);
+    double puts_per_second = std::stod(argv[2]);
+    double duration_seconds = std::stod(argv[3]);
     
     // Parse put_type argument
-    std::string put_type = argv[3];
+    std::string put_type = argv[4];
     bool use_put_by_time = (put_type == "put_with_time");
     if (put_type != "put_with_time" && put_type != "put") {
         std::cerr << "Error: put_type must be \"put_with_time\" or \"put\"" << std::endl;
@@ -54,7 +60,7 @@ int main(int argc, char** argv) {
     }
     
     // Parse mode argument
-    std::string mode = argv[4];
+    std::string mode = argv[5];
     if (mode != "normal" && mode != "get" && mode != "put_pause") {
         std::cerr << "Error: mode must be \"normal\", \"get\", or \"put_pause\"" << std::endl;
         return 1;
@@ -75,7 +81,7 @@ int main(int argc, char** argv) {
     double total_duration_us = duration_seconds * 1000000.0;
 
     std::cout << "=== Big Delta Put Test ===" << std::endl;
-    std::cout << "Chunk size: " << CHUNK_SIZE << " bytes (30KB)" << std::endl;
+    std::cout << "Chunk size: " << chunk_size << " bytes" << std::endl;
     std::cout << "Puts per second: " << puts_per_second << std::endl;
     std::cout << "Duration: " << duration_seconds << " seconds" << std::endl;
     std::cout << "Interval between puts: " << interval_us << " microseconds" << std::endl;
@@ -91,9 +97,9 @@ int main(int argc, char** argv) {
         uint32_t subgroup_index = 0;
         uint32_t shard_index = 0;
 
-        // Create a 30KB data buffer filled with a pattern
-        std::vector<uint8_t> data_buffer(CHUNK_SIZE);
-        for (size_t i = 0; i < CHUNK_SIZE; i++) {
+        // Create data buffer filled with a pattern
+        std::vector<uint8_t> data_buffer(chunk_size);
+        for (size_t i = 0; i < chunk_size; i++) {
             data_buffer[i] = static_cast<uint8_t>(i % 256);
         }
 
@@ -145,7 +151,7 @@ int main(int argc, char** argv) {
                 // Create the object with a unique key for each put
                 ObjectWithStringKey obj;
                 obj.key = "bigdelta_key_" + std::to_string(put_count);
-                obj.blob = Blob(data_buffer.data(), CHUNK_SIZE);
+                obj.blob = Blob(data_buffer.data(), chunk_size);
                 obj.previous_version = persistent::INVALID_VERSION;
                 obj.previous_version_by_key = persistent::INVALID_VERSION;
                 obj.set_message_id(put_count);
@@ -223,7 +229,7 @@ int main(int argc, char** argv) {
                 std::cout << "Actual put rate: " << std::fixed << std::setprecision(2) 
                           << actual_rate << " puts/sec" << std::endl;
                 
-                double throughput_mbps = (static_cast<double>(success_count) * CHUNK_SIZE * 8.0) 
+                double throughput_mbps = (static_cast<double>(success_count) * chunk_size * 8.0) 
                                          / (actual_duration_ms / 1000.0) / 1000000.0;
                 std::cout << "Throughput: " << throughput_mbps << " Mbps" << std::endl;
             }
