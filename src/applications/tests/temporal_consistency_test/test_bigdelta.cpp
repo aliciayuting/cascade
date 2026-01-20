@@ -133,6 +133,8 @@ int main(int argc, char** argv) {
                     std::cout << "=== Pausing for 30 seconds at halfway point (after " << put_count << " puts) ===" << std::endl;
                     std::this_thread::sleep_for(std::chrono::seconds(30));
                     std::cout << "=== Resuming puts ===" << std::endl;
+                    // Adjust start_time forward by 30 seconds so pause doesn't count towards duration
+                    start_time += std::chrono::seconds(30);
                     // Reset the next_put_time to now to avoid catching up
                     next_put_time = std::chrono::high_resolution_clock::now();
                 }
