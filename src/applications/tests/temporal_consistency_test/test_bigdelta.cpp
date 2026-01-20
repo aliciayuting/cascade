@@ -169,7 +169,7 @@ int main(int argc, char** argv) {
         std::cout << std::endl;
         std::cout << "=== Flushing logs on all shards ===" << std::endl;
         {
-            auto shards = capi.get_subgroup_members<PersistentCascadeStoreWithStringKey>(subgroup_index);
+            auto shards = capi.get_subgroup_members<VolatileCascadeStoreWithStringKey>(subgroup_index);
             std::cout << "  Sending flush_log to " << shards.size() << " shards in subgroup " << subgroup_index << " ..." << std::endl;
             
             ObjectWithStringKey flush_obj;
