@@ -107,9 +107,11 @@ int main(int argc, char** argv) {
             obj.set_message_id(put_count);
 
             // Get current time in microseconds for put_by_time
+            TimestampLogger::log(1006, this->get_my_id(), put_count);
             uint64_t current_time_us = get_walltime() / 1000ULL;
 
             try {
+
                 auto result = capi.template put_by_time<PersistentCascadeStoreWithStringKey>(
                     obj, current_time_us, subgroup_index, shard_index, false);
 
