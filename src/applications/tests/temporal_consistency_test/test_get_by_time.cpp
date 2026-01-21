@@ -319,14 +319,12 @@ int main(int argc, char** argv) {
                 flush_obj.key = "/flush_log/" + std::to_string(shard_id);
                 std::cout << "    Sending flush to shard " << shard_id << " with key: " << flush_obj.key << std::endl;
                 
-                // Send put to each node in the shard to ensure all replicas receive it
-                for (size_t j = 0; j < shard.size(); j++) {
-                    // Each iteration reaches a different node in the shard due to round robin policy
-                    auto res = capi.template put<PersistentCascadeStoreWithStringKey>(flush_obj, subgroup_index, shard_id, true);
-                    for (auto& reply_future : res.get()) {
-                        reply_future.second.get(); // Wait for the put to complete
-                    }
+                // Each iteration reaches a different node in the shard due to round robin policy
+                auto res = capi.template put<PersistentCascadeStoreWithStringKey>(flush_obj, subgroup_index, shard_id, true);
+                for (auto& reply_future : res.get()) {
+                    reply_future.second.get(); // Wait for the put to complete
                 }
+                
                 std::cout << "    ✓ Flush sent to shard " << shard_id << std::endl;
                 shard_id++;
             }
