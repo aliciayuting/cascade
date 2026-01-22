@@ -317,21 +317,27 @@ int main(int argc, char** argv) {
             std::cout << "Successful gets: " << get_success_count << std::endl;
             std::cout << "Failed gets: " << get_failure_count << std::endl;
 
-            if (!get_latencies_us.empty()) {
-                // Calculate min, max, average, and sort for percentiles
-                double min_latency = get_latencies_us[0];
-                double max_latency = get_latencies_us[0];
+            // Skip the first 10 requests for statistics (warmup)
+            constexpr size_t WARMUP_COUNT = 10;
+            if (get_latencies_us.size() > WARMUP_COUNT) {
+                std::cout << "Skipping first " << WARMUP_COUNT << " requests for statistics (warmup)" << std::endl;
+                
+                // Calculate min, max, average, and sort for percentiles (excluding warmup)
+                double min_latency = get_latencies_us[WARMUP_COUNT];
+                double max_latency = get_latencies_us[WARMUP_COUNT];
                 double sum_latency = 0;
                 
-                for (double lat : get_latencies_us) {
+                for (size_t idx = WARMUP_COUNT; idx < get_latencies_us.size(); idx++) {
+                    double lat = get_latencies_us[idx];
                     if (lat < min_latency) min_latency = lat;
                     if (lat > max_latency) max_latency = lat;
                     sum_latency += lat;
                 }
-                double avg_latency = sum_latency / get_latencies_us.size();
+                size_t stats_count = get_latencies_us.size() - WARMUP_COUNT;
+                double avg_latency = sum_latency / stats_count;
 
-                // Sort for percentiles
-                std::vector<double> sorted_latencies = get_latencies_us;
+                // Sort for percentiles (excluding warmup)
+                std::vector<double> sorted_latencies(get_latencies_us.begin() + WARMUP_COUNT, get_latencies_us.end());
                 std::sort(sorted_latencies.begin(), sorted_latencies.end());
                 
                 size_t n = sorted_latencies.size();
@@ -340,12 +346,16 @@ int main(int argc, char** argv) {
                 double p99 = sorted_latencies[(size_t)(n * 0.99)];
 
                 std::cout << std::fixed << std::setprecision(2);
+                std::cout << "Stats based on " << stats_count << " requests (excluding warmup)" << std::endl;
                 std::cout << "Min latency: " << min_latency << " us" << std::endl;
                 std::cout << "Max latency: " << max_latency << " us" << std::endl;
                 std::cout << "Avg latency: " << avg_latency << " us" << std::endl;
                 std::cout << "P50 latency: " << p50 << " us" << std::endl;
                 std::cout << "P90 latency: " << p90 << " us" << std::endl;
                 std::cout << "P99 latency: " << p99 << " us" << std::endl;
+            } else if (!get_latencies_us.empty()) {
+                std::cout << "Warning: Not enough requests to skip warmup, showing all " 
+                          << get_latencies_us.size() << " results" << std::endl;
             }
         }
 
